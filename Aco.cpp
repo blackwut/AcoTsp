@@ -23,7 +23,6 @@ class Aco {
 
         int _numberOfAnts;
         int _numberOfCities;
-        //float _goalLength;
         int _maxEpoch;
 
         float _bestLength = FLT_MAX;
