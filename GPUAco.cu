@@ -272,26 +272,29 @@ int main(int argc, char * argv[]) {
         }
     }
 
-    int grid = roundWithBlockSize(nAnts, blockSize);
-    dim3 dimBlock(8, 8);
-    dim3 dimGridAnt(roundWithBlockSize(nAnts, dimBlock.y), roundWithBlockSize(nCities, dimBlock.x));
-    dim3 dimGridMat(roundWithBlockSize(nCities, dimBlock.y), roundWithBlockSize(nCities, dimBlock.x));
+    dim3 dimBlock1D(32);
+    dim3 dimBlock2D(8, 8);
 
-    initCurand<<<grid, blockSize>>>(state, seed, nAnts);
-    initialize<<<dimGridMat, dimBlock>>>(distance, eta, pheromone, delta, valPheromone, nCities, nCities);
+    dim3 gridAnt1D(numberOfBlocks(nAnts, dimBlock1D.x));
+    dim3 gridAnt2D(numberOfBlocks(nAnts, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
+
+    dim3 gridMatrix2D(numberOfBlocks(nCities, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
+
+    initCurand<<<gridAnt1D, dimBlock1D>>>(state, seed, nAnts);
+    initialize<<<gridMatrix2D, dimBlock2D>>>(distance, eta, pheromone, delta, valPheromone, nCities, nCities);
 
     int epoch = 0;
     do {
-        clearAnts<<<dimGridAnt, dimBlock>>>(visited, tabu, nAnts, nCities);
-        calculateFitness<<<dimGridMat, dimBlock>>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);
+        clearAnts<<<gridAnt1D, dimBlock1D>>>(visited, tabu, nAnts, nCities);
+        calculateFitness<<<gridMatrix2D, dimBlock2D>>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);
         
-        placeAnts<<<grid, blockSize>>>(visited, tabu, nAnts, nCities, state);
-        claculateTour<<<grid, blockSize>>>(visited, tabu, fitness, nAnts, nCities, state);
-        calculateTourLen<<<grid, blockSize>>>(tabu, distance, tourLen, nAnts, nCities);
+        placeAnts<<<gridAnt1D, dimBlock1D>>>(visited, tabu, nAnts, nCities, state);
+        claculateTour<<<gridAnt1D, dimBlock1D>>>(visited, tabu, fitness, nAnts, nCities, state);
+        calculateTourLen<<<gridAnt1D, dimBlock1D>>>(tabu, distance, tourLen, nAnts, nCities);
         
-        updateBest<<<grid, blockSize>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen);
-        updateDelta<<<grid, blockSize>>>(delta, tabu, tourLen, nAnts, nCities, q);
-        updatePheromone<<<dimGridMat, dimBlock>>>(pheromone, delta, nCities, nCities, rho);
+        updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen);
+        updateDelta<<<gridAnt1D, dimBlock1D>>>(delta, tabu, tourLen, nAnts, nCities, q);
+        updatePheromone<<<gridMatrix2D, dimBlock2D>>>(pheromone, delta, nCities, nCities, rho);
 
     } while (++epoch < maxEpochs);
 
