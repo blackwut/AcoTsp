@@ -10,9 +10,11 @@
 #include "TSPReader.cpp"
 
 
-__global__ void initCurand(curandStateXORWOW_t * state, unsigned long seed, int nAnts)
+__global__ 
+void initCurand(curandStateXORWOW_t * state, unsigned long seed, int nAnts)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    
     if ( idx >= nAnts) return;
 
     curand_init(seed, idx, 0, &state[idx]);
@@ -25,32 +27,23 @@ float randXOR(curandState *state)
 }
 
 __global__
-void initEta(float * distance, float * eta, int rows, int cols)
+void initialize(float * distance, float * eta, float * pheromone, float * delta, float initialPheromone, int rows, int cols)
 {    
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
     if ( row >= rows || col >= cols ) return;
 
-    //eta[row * cols + col] = __saturatef((1 - (row == col)) / distance[row * cols + col]);
-    float d = distance[row * cols + col];
+    int id = row * cols + col;
+    float d = distance[id];
     if ( d == 0 ) {
-        eta[row * cols + col] = 0.0f;
+        eta[id] = 0.0f;
     } else {
-        eta[row * cols + col] = 1.0f / d;
+        eta[id] = 1.0f / d;
     }
-}
 
-__global__
-void initPheromone(float * pheromone, float * delta, float val, int rows, int cols)
-{
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if ( row >= rows || col >= cols ) return;
-
-    pheromone[row * cols + col] = val;
-    delta[row * cols + col] = 0.0f;
+    pheromone[id] = initialPheromone;
+    delta[id] = 0.0f;
 }
 
 __global__
@@ -66,18 +59,6 @@ void clearAnts(int * visited, int * tabu, int rows, int cols)
 }
 
 __global__
-void placeAnts(int * visited, int * tabu, int nAnts, int nCities, curandStateXORWOW_t * state)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (idx >= nAnts) return;
-
-    int j = nCities * randXOR(state + idx);
-    visited[idx * nCities + j] = 1;
-    tabu[idx * nCities] = j;
-}
-
- __global__
 void calculateFitness(float * fitness, float * pheromone, float * eta, float alpha, float beta, int rows, int cols)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -90,6 +71,20 @@ void calculateFitness(float * fitness, float * pheromone, float * eta, float alp
 }
 
 
+
+__global__
+void placeAnts(int * visited, int * tabu, int nAnts, int nCities, curandStateXORWOW_t * state)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx >= nAnts) return;
+
+    int j = nCities * randXOR(state + idx);
+    visited[idx * nCities + j] = 1;
+    tabu[idx * nCities] = j;
+}
+
+
 __global__
 void claculateTour(int * visited, int * tabu, float * fitness, const int rows, const int cols, curandStateXORWOW_t * state)
 {
@@ -97,7 +92,6 @@ void claculateTour(int * visited, int * tabu, float * fitness, const int rows, c
 
     if ( idx >= rows ) return;
 
-    //float * p = (float *) malloc( cols * sizeof(float) );
     float p[1024];
     int _visited[1024] = {0};
     float r;
@@ -110,31 +104,25 @@ void claculateTour(int * visited, int * tabu, float * fitness, const int rows, c
 
     for (int s = 1; s < cols; ++s) {
 
-        // r = randXOR(state + idx);
         sum = 0.0f;
         i = tabu[idx * cols + (s - 1)];
         for (j = 0; j < cols; ++j) {
-            sum += fitness[i * cols + j] * (1 - _visited[j]);//visited[idx * cols + j]);
+            sum += fitness[i * cols + j] * (1 - _visited[j]);
             p[j] = sum;
         }
-
-        // for (j = 0; j < cols; ++j) {
-        //     p[j] /= sum;
-        // }
 
         r = randXOR(state + idx) * sum;
         k = -1;
         for (j = 0; j < cols; ++j) {
-            if ( k == -1 && p[j] > r) {
+            if ( k == -1 && p[j] > r ) {
                 k = j;
             }
+            // k += (k == -1) * (p[j] > r) * j;
         }
-        //visited[idx * cols + k] = 1;
+        //k += 1;
         _visited[k] = 1;
         tabu[idx * cols + s] = k;
     }
-
-    //free(p);
 }
 
 __global__
@@ -290,16 +278,17 @@ int main(int argc, char * argv[]) {
     dim3 dimGridMat(roundWithBlockSize(nCities, dimBlock.y), roundWithBlockSize(nCities, dimBlock.x));
 
     initCurand<<<grid, blockSize>>>(state, seed, nAnts);
-    initPheromone<<<dimGridMat, dimBlock>>>(pheromone, delta, valPheromone, nCities, nCities);
-    initEta<<<dimGridMat, dimBlock>>>(distance, eta, nCities, nCities);
+    initialize<<<dimGridMat, dimBlock>>>(distance, eta, pheromone, delta, valPheromone, nCities, nCities);
 
     int epoch = 0;
     do {
         clearAnts<<<dimGridAnt, dimBlock>>>(visited, tabu, nAnts, nCities);
-        placeAnts<<<grid, blockSize>>>(visited, tabu, nAnts, nCities, state);
         calculateFitness<<<dimGridMat, dimBlock>>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);
+        
+        placeAnts<<<grid, blockSize>>>(visited, tabu, nAnts, nCities, state);
         claculateTour<<<grid, blockSize>>>(visited, tabu, fitness, nAnts, nCities, state);
         calculateTourLen<<<grid, blockSize>>>(tabu, distance, tourLen, nAnts, nCities);
+        
         updateBest<<<grid, blockSize>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen);
         updateDelta<<<grid, blockSize>>>(delta, tabu, tourLen, nAnts, nCities, q);
         updatePheromone<<<dimGridMat, dimBlock>>>(pheromone, delta, nCities, nCities, rho);
