@@ -46,17 +46,17 @@ void initialize(float * distance, float * eta, float * pheromone, float * delta,
     delta[id] = 0.0f;
 }
 
-__global__
-void clearAnts(int * visited, int * tabu, int rows, int cols)
-{
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+// __global__
+// void clearAnts(int * visited, int * tabu, int rows, int cols)
+// {
+//     int row = blockIdx.y * blockDim.y + threadIdx.y;
+//     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if ( row >= rows || col >= cols ) return;
+//     if ( row >= rows || col >= cols ) return;
 
-    visited[row * rows + col] = 0;
-    tabu[row * cols + col] = 0;
-}
+//     visited[row * rows + col] = 0;
+//     //tabu[row * cols + col] = 0;
+// }
 
 __global__
 void calculateFitness(float * fitness, float * pheromone, float * eta, float alpha, float beta, int rows, int cols)
@@ -72,17 +72,17 @@ void calculateFitness(float * fitness, float * pheromone, float * eta, float alp
 
 
 
-__global__
-void placeAnts(int * visited, int * tabu, int nAnts, int nCities, curandStateXORWOW_t * state)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+// __global__
+// void placeAnts(int * visited, int * tabu, int nAnts, int nCities, curandStateXORWOW_t * state)
+// {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (idx >= nAnts) return;
+//     if (idx >= nAnts) return;
 
-    int j = nCities * randXOR(state + idx);
-    visited[idx * nCities + j] = 1;
-    tabu[idx * nCities] = j;
-}
+//     int j = nCities * randXOR(state + idx);
+//     visited[idx * nCities + j] = 1;
+//     tabu[idx * nCities] = j;
+// }
 
 
 __global__
@@ -93,21 +93,28 @@ void claculateTour(int * visited, int * tabu, float * fitness, const int rows, c
     if ( idx >= rows ) return;
 
     float p[1024];
-    int _visited[1024] = {0};
+    int _visited[1024];
     float r;
     float sum;
     int i;
     int j;
     int k;
 
-    _visited[tabu[idx * cols]] = 1;
+    for (i = 0; i < cols; ++i) {
+        _visited[i] = 1;
+    }
+
+    k = cols * randXOR(state + idx);
+    _visited[k] = 0;
+    tabu[idx * cols] = k;
 
     for (int s = 1; s < cols; ++s) {
 
         sum = 0.0f;
-        i = tabu[idx * cols + (s - 1)];
+        //i = tabu[idx * cols + (s - 1)];
+        i = k;
         for (j = 0; j < cols; ++j) {
-            sum += fitness[i * cols + j] * (1 - _visited[j]);
+            sum += fitness[i * cols + j] * _visited[j];
             p[j] = sum;
         }
 
@@ -119,8 +126,8 @@ void claculateTour(int * visited, int * tabu, float * fitness, const int rows, c
             }
             // k += (k == -1) * (p[j] > r) * j;
         }
-        //k += 1;
-        _visited[k] = 1;
+        // k += 1;
+        _visited[k] = 0;
         tabu[idx * cols + s] = k;
     }
 }
@@ -147,7 +154,7 @@ void calculateTourLen(int * tabu, float * distance, int * tourLen, int rows, int
 }
 
 __global__
-void updateBest(int * bestPath, int * tabu, int * tourLen, int rows, int cols, int * bestPathLen)
+void updateBest(int * bestPath, int * tabu, int * tourLen, int rows, int cols, int * bestPathLen, int last)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -218,7 +225,8 @@ int main(int argc, char * argv[]) {
     float rho = 0.8f;
     int maxEpochs = 30;
 
-    int seed = 123;
+    int seed = time(0);//123;
+    
     argc--;
     argv++;
     int args = 0;
@@ -247,9 +255,8 @@ int main(int argc, char * argv[]) {
     int * bestPath;
     int * bestPathLen;
 
-    int blockSize = 32;
     int elems = nCities * nCities;
-
+    
     startTimer();
 
     cudaMallocManaged(&state, nAnts * sizeof(curandStateXORWOW_t));
@@ -273,11 +280,10 @@ int main(int argc, char * argv[]) {
     }
 
     dim3 dimBlock1D(32);
-    dim3 dimBlock2D(8, 8);
+    dim3 dimBlock2D(16, 16);
 
     dim3 gridAnt1D(numberOfBlocks(nAnts, dimBlock1D.x));
     dim3 gridAnt2D(numberOfBlocks(nAnts, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
-
     dim3 gridMatrix2D(numberOfBlocks(nCities, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
 
     initCurand<<<gridAnt1D, dimBlock1D>>>(state, seed, nAnts);
@@ -285,14 +291,14 @@ int main(int argc, char * argv[]) {
 
     int epoch = 0;
     do {
-        clearAnts<<<gridAnt1D, dimBlock1D>>>(visited, tabu, nAnts, nCities);
+        //clearAnts<<<gridAnt1D, dimBlock1D>>>(visited, tabu, nAnts, nCities);
         calculateFitness<<<gridMatrix2D, dimBlock2D>>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);
         
-        placeAnts<<<gridAnt1D, dimBlock1D>>>(visited, tabu, nAnts, nCities, state);
+        //placeAnts<<<gridAnt1D, dimBlock1D>>>(visited, tabu, nAnts, nCities, state);
         claculateTour<<<gridAnt1D, dimBlock1D>>>(visited, tabu, fitness, nAnts, nCities, state);
         calculateTourLen<<<gridAnt1D, dimBlock1D>>>(tabu, distance, tourLen, nAnts, nCities);
         
-        updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen);
+        updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1)== maxEpochs));
         updateDelta<<<gridAnt1D, dimBlock1D>>>(delta, tabu, tourLen, nAnts, nCities, q);
         updatePheromone<<<gridMatrix2D, dimBlock2D>>>(pheromone, delta, nCities, nCities, rho);
 
