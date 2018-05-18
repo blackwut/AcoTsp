@@ -4,7 +4,13 @@
 
 #include "common.hpp"
 #include "TSPReader.cpp"
-#include "Aco.cpp"
+
+#ifdef ACO_CPU
+#include "AcoCpu.cpp"
+#endif
+#ifdef ACO_FF
+#include "AcoFF.cpp"
+#endif
 
 using namespace std;
 
@@ -16,6 +22,7 @@ int main(int argc, char * argv[]) {
     float q = 55.0f;
     float rho = 0.8f;
     int maxEpochs = 30;
+    int nThreads = 8;
 
     argc--;
     argv++;
@@ -26,26 +33,34 @@ int main(int argc, char * argv[]) {
     floatArg(argc, argv, args++, &q);
     floatArg(argc, argv, args++, &rho);
     intArg(argc, argv, args++, &maxEpochs);
+    intArg(argc, argv, args++, &nThreads);
+
+    __seed__ = 123;
 
     TSP * tsp = getTPSFromFile(path);
 
-    Aco aco(
-        tsp->distance, 
+#ifdef ACO_CPU
+    AcoCpu aco(
+#endif
+#ifdef ACO_FF
+    AcoFF aco(
+#endif
         tsp->numberOfCities, 
+        tsp->numberOfCities,
+        tsp->distance,
         alpha, beta, q, rho, 
-        tsp->numberOfCities, 
-        maxEpochs);
+        maxEpochs,
+        nThreads);
 
     startTimer();
     aco.solve();
     stopAndPrintTimer();
 
-    aco.printBest();
+    int * bestTour = aco.getBestTour();
 
-    int * bestPath = aco.getBestPath();
-
-    cout << (checkPathPossible(tsp, bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
-
+    printMatrix("BestTour", bestTour, 1, tsp->numberOfCities);
+    cout << "BestTourLen: " << aco.getBestTourLen() << endl;
+    cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
 
     free(path);
     free(tsp);

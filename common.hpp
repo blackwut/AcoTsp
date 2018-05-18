@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <ctime>
 #include <chrono>
+#include <cstring>
 
 using namespace std;
 
@@ -61,11 +62,17 @@ void stopTimer() {
 void printTimer() {
     long msec = std::chrono::duration_cast<std::chrono::milliseconds>(endPoint - startPoint).count();
     long usec = std::chrono::duration_cast<std::chrono::microseconds>(endPoint - startPoint).count();
-    wcerr << "Computational time: " << msec << " ms " << usec << " usec " << endl;
+    wcerr << "Compute time: " << msec << " ms " << usec << " usec " << endl;
 }
 
 void stopAndPrintTimer() {
     stopTimer();
+    printTimer();
+}
+
+void stopAndPrintTimer(char * name) {
+    stopTimer();
+    wcerr << name;
     printTimer();
 }
 

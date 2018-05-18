@@ -186,14 +186,15 @@ TSP * getTPSFromFile(char * filename) {
         in >> buffer;
     }
 
-    cout << "NAME: " << name << endl;
+    in.close();
+
+    cout << "*****  " << name << "  *****" << endl;
     cout << "TYPE: " << type << endl;
     cout << "DIMENSION: " << dimension << endl;
     cout << "EDGE_WEIGHT_TYPE:" << edgeWeightType << endl;
     cout << "EDGE_WEIGHT_FORMAT: " << edgeWieghtFormat << endl;
     cout << "DISPLAY_DATA_TYPE: " << displayDataType << endl;
-
-    in.close();
+    cout << endl;
 
     TSP * tsp = (TSP *) malloc( sizeof(TSP) );
     tsp->numberOfCities = dimension;
