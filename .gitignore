@@ -38,3 +38,7 @@
 *.ptx
 *.cubin
 *.fatbin
+
+acocpu
+acoff
+acogpu
