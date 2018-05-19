@@ -16,6 +16,13 @@ using namespace std;
 
 int main(int argc, char * argv[]) {
 
+#ifdef ACO_CPU
+    cout << " ***** ACO CPU *****" << endl;
+#endif
+#ifdef ACO_FF
+    cout << " ***** ACO FastFlow *****" << endl;
+#endif
+
     char * path = (char *) malloc(MAX_LEN);
     float alpha = 4.0f;
     float beta = 2.0f;
@@ -35,7 +42,7 @@ int main(int argc, char * argv[]) {
     intArg(argc, argv, args++, &maxEpochs);
     intArg(argc, argv, args++, &nThreads);
 
-    __seed__ = 123;
+    __seed__ = time(0);
 
     TSP * tsp = getTPSFromFile(path);
 

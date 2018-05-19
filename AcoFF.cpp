@@ -1,3 +1,5 @@
+#include <atomic>
+
 #include <ff/parallel_for.hpp>
 #include <ff/farm.hpp>
 
@@ -5,6 +7,17 @@
 
 using namespace std;
 using namespace ff;
+
+float atomic_addf(atomic<float> * f, float d){
+      float old = f->load(std::memory_order_consume);
+      float desired = old + d;
+      while (!f->compare_exchange_weak(old, desired,
+           std::memory_order_release, std::memory_order_consume))
+      {
+           desired = old + d;
+      }
+      return desired;
+ }
 
 struct Emitter: ff_node_t<int> {
 
@@ -46,14 +59,15 @@ struct Worker: ff_node_t<int> {
     float * p = NULL;
 
     int * tabu;
-    float * delta;
+    atomic<float> * delta;
     int * lengths;
 
     int nAnts;
     int nCities;
+    float q;
 
-    Worker(float * distance, float * fitness, int * tabu, float * delta, int * lengths, int nAnts, int nCities)
-    : distance(distance), fitness(fitness), tabu(tabu), delta(delta), lengths(lengths), nAnts(nAnts), nCities(nCities) {}
+    Worker(float * distance, float * fitness, int * tabu, atomic<float> * delta, int * lengths, int nAnts, int nCities, float q)
+    : distance(distance), fitness(fitness), tabu(tabu), delta(delta), lengths(lengths), nAnts(nAnts), nCities(nCities), q(q) {}
 
     int * svc(int * in) {
 
@@ -109,6 +123,18 @@ struct Worker: ff_node_t<int> {
 
         lengths[id] = (int)length;
 
+        float d = q / length;
+        for (int j = 0; j < nCities - 1; ++j) {
+            from = tabu[id * nCities + j];
+            to = tabu[id * nCities + j + 1];
+            //delta[from * nCities + to] += q / lengths[i];
+            atomic_addf( (delta + (from * nCities + to)), d ); 
+        }
+        from = tabu[i * nCities + nCities - 1];
+        to = tabu[i * nCities];
+        atomic_addf( (delta + (from * nCities + to)), d ); 
+        //delta[from * nCities + to] += q / lengths[i];
+
         return in;
     }
 };
@@ -137,7 +163,7 @@ class AcoFF {
     
     float * eta;
     float * fitness;
-    float * delta;
+    atomic<float> * delta;
     float * pheromone;
 
     int * visited;
@@ -195,20 +221,20 @@ class AcoFF {
         });
     }
 
-    void updateDelta() {
-        int from;
-        int to;
-        for (int i = 0; i < nAnts; ++i) {
-            for (int j = 0; j < nCities - 1; ++j) {
-                from = tabu[i * nCities + j];
-                to = tabu[i * nCities + j + 1];
-                delta[from * nCities + to] += q / lengths[i];
-            }
-            from = tabu[i * nCities + nCities - 1];
-            to = tabu[i * nCities];
-            delta[from * nCities + to] += q / lengths[i];
-        }
-    }
+    // void updateDelta() {
+    //     int from;
+    //     int to;
+    //     for (int i = 0; i < nAnts; ++i) {
+    //         for (int j = 0; j < nCities - 1; ++j) {
+    //             from = tabu[i * nCities + j];
+    //             to = tabu[i * nCities + j + 1];
+    //             delta[from * nCities + to] += q / lengths[i];
+    //         }
+    //         from = tabu[i * nCities + nCities - 1];
+    //         to = tabu[i * nCities];
+    //         delta[from * nCities + to] += q / lengths[i];
+    //     }
+    // }
 
     void updatePheromone() {
         pfrFloat->parallel_for(0L, elems, [this](const long i) {
@@ -224,7 +250,7 @@ class AcoFF {
         elems = nCities * nCities;
         eta = (float *) malloc(elems * sizeof(float));
         fitness = (float *) malloc(elems * sizeof(float));
-        delta = (float *) malloc(elems * sizeof(float));
+        delta = (atomic<float> *) malloc(elems * sizeof(atomic<float>));
         pheromone = (float *) malloc(elems * sizeof(float));
 
         visited = (int *) malloc(nAnts * nCities * sizeof(int));
@@ -236,10 +262,10 @@ class AcoFF {
         pfrFloat = new ParallelForReduce<float>(FF_AUTO, false);
         pfrInt = new ParallelForReduce<int>(FF_AUTO, false);
 
-        farmTour = new ff_Farm<>( [&distance = distance, &fitness = fitness, &tabu = tabu, &delta = delta, &lengths = lengths, &nAnts = nAnts, &nCities = nCities, &nThreads = nThreads]() { 
+        farmTour = new ff_Farm<>( [&distance = distance, &fitness = fitness, &tabu = tabu, &delta = delta, &lengths = lengths, &nAnts = nAnts, &nCities = nCities, &q = q, &nThreads = nThreads]() { 
             vector< unique_ptr<ff_node> > workers;
             for(size_t i = 0; i < nThreads; ++i)
-                workers.push_back( make_unique<Worker>(distance, fitness, tabu, delta, lengths, nAnts, nCities) );
+                workers.push_back( make_unique<Worker>(distance, fitness, tabu, delta, lengths, nAnts, nCities, q) );
             return workers;
         }());
 
@@ -261,10 +287,12 @@ class AcoFF {
         do {
 
             calcFitness();
-            calcTour();
-            calcBestTour();
             clearDelta();
-            updateDelta();
+            calcTour();
+
+            // printMatrix("Delta", delta, nCities, nCities);
+            calcBestTour();
+            // updateDelta();
             updatePheromone();
 
         } while (++epoch < maxEpoch);
@@ -283,6 +311,7 @@ class AcoFF {
         delete pfrInt;
         delete emitterTour;
         delete farmTour;
+        
         free(eta);
         free(fitness);
         free(delta);
