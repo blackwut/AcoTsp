@@ -1,3 +1,6 @@
 # AcoTsp
 
-This projects aims to implement a CPU and CUDA versions of an ACO TSP.
+This project aims to implement a fast ACO TSP algorithm in three different ways:
+- Sequential C++
+- FastFlow (https://github.com/fastflow/fastflow) 
+- CUDA
