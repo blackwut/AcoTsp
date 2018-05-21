@@ -245,7 +245,7 @@ class AcoFF {
 
         farmTour = new ff_Farm<>( [&distance = distance, &fitness = fitness, &tabu = tabu, &delta = delta, &lengths = lengths, &nAnts = nAnts, &nCities = nCities, &q = q, &nThreads = nThreads]() { 
             vector< unique_ptr<ff_node> > workers;
-            for(size_t i = 0; i < nThreads; ++i)
+            for(int i = 0; i < nThreads; ++i)
                 workers.push_back( make_unique<Worker>(distance, fitness, tabu, delta, lengths, nAnts, nCities, q) );
             return workers;
         }());
