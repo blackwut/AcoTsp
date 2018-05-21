@@ -17,10 +17,10 @@ using namespace std;
 int main(int argc, char * argv[]) {
 
 #ifdef ACO_CPU
-    cout << " ***** ACO CPU *****" << endl;
+    cout << "***** ACO CPU *****" << endl;
 #endif
 #ifdef ACO_FF
-    cout << " ***** ACO FastFlow *****" << endl;
+    cout << "***** ACO FastFlow *****" << endl;
 #endif
 
     char * path = (char *) malloc(MAX_LEN);
@@ -70,6 +70,7 @@ int main(int argc, char * argv[]) {
     cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
 
     free(path);
+    free(tsp->distance);
     free(tsp);
 
     return 0;
