@@ -3,6 +3,7 @@
 #include <ff/parallel_for.hpp>
 #include <ff/farm.hpp>
 
+#include "common.hpp"
 #include "random.hpp"
 
 using namespace std;
@@ -21,14 +22,14 @@ float atomic_addf(atomic<float> * f, float d){
 
 struct Emitter: ff_node_t<int> {
 
-    Emitter(ff_loadbalancer * const loadBalancer, int nAnts) 
-    : loadBalancer(loadBalancer), nAnts(nAnts) {}
-
     ff_loadbalancer * const loadBalancer;
     int nAnts;
 
+    Emitter(ff_loadbalancer * const loadBalancer, int nAnts) 
+    : loadBalancer(loadBalancer), nAnts(nAnts) {}
+
     int * svc(int * s) {
-        if (s == nullptr) { // first time
+        if (s == nullptr) {
             
             for (int i = 0; i < nAnts; ++i) {
                 int * x = (int *) malloc(sizeof(int));
@@ -36,10 +37,7 @@ struct Emitter: ff_node_t<int> {
                 ff_send_out(x);
             }
         
-            // broadcasting the End-Of-Stream to all workers
-            loadBalancer->broadcast_task(EOS);
-        
-            // keep me alive 
+            loadBalancer->broadcast_task(EOS);        
             return GO_ON;
         }
 
@@ -127,13 +125,11 @@ struct Worker: ff_node_t<int> {
         for (int j = 0; j < nCities - 1; ++j) {
             from = tabu[id * nCities + j];
             to = tabu[id * nCities + j + 1];
-            //delta[from * nCities + to] += q / lengths[i];
             atomic_addf( (delta + (from * nCities + to)), d ); 
         }
         from = tabu[i * nCities + nCities - 1];
         to = tabu[i * nCities];
         atomic_addf( (delta + (from * nCities + to)), d ); 
-        //delta[from * nCities + to] += q / lengths[i];
 
         return in;
     }
@@ -175,19 +171,19 @@ class AcoFF {
     int * bestTour;
 
     void initPheromone(float initialPheromone) {
-        pfrFloat->parallel_for(0L, elems, [this, &initialPheromone](const long i) {
+        pfrFloat->parallel_for(0L, elems, [&pheromone = pheromone, &initialPheromone](const long i) {
             pheromone[i] = initialPheromone;
         });
     }
 
     void initEta() {
-        pfrFloat->parallel_for(0L, elems, [this](const long i) {
+        pfrFloat->parallel_for(0L, elems, [&eta = eta, &distance = distance](const long i) {
             eta[i] = (distance[i] == 0 ? 0.0f : 1.0f / distance[i]);
         });
     }
 
     void calcFitness() {   
-        pfrFloat->parallel_for(0L, elems, [this](const long i) {
+        pfrFloat->parallel_for(0L, elems, [&fitness = fitness, &pheromone = pheromone, &eta = eta, &alpha = alpha, &beta = beta](const long i) {
             fitness[i] = pow(pheromone[i], alpha) + pow(eta[i], beta);
         });
     }
@@ -202,7 +198,7 @@ class AcoFF {
     void calcBestTour() {      
         pfrInt->parallel_reduce(bestTourLen, INT_MAX, 
                             0L, nAnts,
-                            [this](const long i, int &min) { min = (min > lengths[i] ? lengths[i] : min); },
+                            [&lengths = lengths](const long i, int &min) { min = (min > lengths[i] ? lengths[i] : min); },
                             [](int &v, const int &elem) { v = (v > elem ? elem : v); });
 
         for (int i = 0; i < nAnts; ++i) {
@@ -216,28 +212,13 @@ class AcoFF {
     }
 
     void clearDelta() {
-        pfrFloat->parallel_for(0L, elems, [this](const long i) {
+        pfrFloat->parallel_for(0L, elems, [&delta = delta](const long i) {
             delta[i] = 0.0f;
         });
     }
 
-    // void updateDelta() {
-    //     int from;
-    //     int to;
-    //     for (int i = 0; i < nAnts; ++i) {
-    //         for (int j = 0; j < nCities - 1; ++j) {
-    //             from = tabu[i * nCities + j];
-    //             to = tabu[i * nCities + j + 1];
-    //             delta[from * nCities + to] += q / lengths[i];
-    //         }
-    //         from = tabu[i * nCities + nCities - 1];
-    //         to = tabu[i * nCities];
-    //         delta[from * nCities + to] += q / lengths[i];
-    //     }
-    // }
-
     void updatePheromone() {
-        pfrFloat->parallel_for(0L, elems, [this](const long i) {
+        pfrFloat->parallel_for(0L, elems, [&pheromone = pheromone, &delta = delta, &rho = rho](const long i) {
             pheromone[i] = pheromone[i] * (1 - rho) + delta[i];
         });
     }
@@ -289,10 +270,7 @@ class AcoFF {
             calcFitness();
             clearDelta();
             calcTour();
-
-            // printMatrix("Delta", delta, nCities, nCities);
             calcBestTour();
-            // updateDelta();
             updatePheromone();
 
         } while (++epoch < maxEpoch);
