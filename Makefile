@@ -1,5 +1,5 @@
 CXX 		= g++
-CXX_FLAGS	= -O3 -std=c++14 -Wall -I ~/Projects/fastflow/
+CXX_FLAGS	= -O3 -g -std=c++14 -Wall -I ~/Projects/fastflow/
 LD_FLAGS	= -pthread
 
 OBJECTS_CPU = main.cpp TSPReader.cpp AcoCpu.cpp AcoFF.cpp common.hpp random.hpp
