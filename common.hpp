@@ -2,6 +2,7 @@
 #define __COMMON_HPP__
 
 #include <string>
+#include <cstring>
 #include <iostream>
 #include <iomanip>
 #include <ctime>
