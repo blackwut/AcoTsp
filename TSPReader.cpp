@@ -35,15 +35,15 @@ int checkPathPossible(TSP * tsp, int * path) {
         to = path[i + 1];
 
         if (from == -1) {
-            wcerr << "Illegal city in position: " << i << "!"<< endl;
+            clog << "Illegal city in position: " << i << "!"<< endl;
             return 0;
         }
         if (to == -1) {
-            wcerr << "Illegal city in position: " << i + 1 << "!"<< endl;
+            clog << "Illegal city in position: " << i + 1 << "!"<< endl;
             return 0;
         }
         if (tsp->distance[from * tsp->numberOfCities + to] <= 0.0f) {
-            wcerr << "Path impossibile: " << from << " -> " << to << endl;
+            clog << "Path impossibile: " << from << " -> " << to << endl;
             return 0;
         }
     }
@@ -98,7 +98,7 @@ float * readMatrixFromNodes(ifstream &in, string nodeCoordType, string edgeWeigh
                 } else if ( edgeWeightType == "MAX_2D") {
                     matrix(i, j) = max ( round(abs(xd)), round(abs(yd)) );
                 } else {
-                    wcerr << "EDGE_WEIGHT_TYPE not supported!" << endl;
+                    clog << "EDGE_WEIGHT_TYPE: " << edgeWeightType << " not supported!" << endl;
                     exit(-2);
                 }
             }
@@ -109,7 +109,7 @@ float * readMatrixFromNodes(ifstream &in, string nodeCoordType, string edgeWeigh
         return matrix;
 
     } else {
-        wcerr << "NODE_COORD_TYPE not supported!" << endl;
+        clog << "NODE_COORD_TYPE: " << nodeCoordType <<" not supported!" << endl;
         exit(-2);
     }
 
@@ -138,18 +138,18 @@ float * readMatrixFromEdges(ifstream &in, string edgeWieghtFormat, int dimension
         }
 
     } else {
-        wcerr << "EDGE_WEIGHT_FORMAT not supported!" << endl;
+        clog << "EDGE_WEIGHT_FORMAT: " << edgeWieghtFormat << " not supported!" << endl;
         exit(-3);
     }
     return matrix;
 }
 
 
-TSP * getTPSFromFile(char * filename) {
+TSP * getTPSFromFile(string filename) {
 
-    string buffer;
+    string buffer = "";
 
-    float * matrix;
+    float * matrix = NULL;
     
     string name;
     string type;
@@ -162,7 +162,7 @@ TSP * getTPSFromFile(char * filename) {
 
     ifstream in(filename);
     if ( !in ) {
-        wcerr << "Error while loading TSP file: " << filename << endl;
+        clog << "Error while loading TSP file: " << filename << endl;
         exit(-2);
     }
     

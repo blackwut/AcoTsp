@@ -23,6 +23,7 @@ int main(int argc, char * argv[]) {
 
     if (argc < 8) {
         cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpochs nThreads" << endl;
+        exit(-1);
     }
 
     argc--;

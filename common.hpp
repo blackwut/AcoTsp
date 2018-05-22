@@ -1,10 +1,11 @@
 #ifndef __COMMON_HPP__
 #define __COMMON_HPP__
 
+#include <string>
+#include <iostream>
 #include <iomanip>
 #include <ctime>
 #include <chrono>
-#include <cstring>
 
 using namespace std;
 
@@ -15,7 +16,7 @@ void intArg(int argc, char * argv[], int i, int * val) {
         *val = atoi(argv[i]);
         return;
     }
-    wcerr << "Error while parsing argv[" << i << "] int value" << endl; 
+    clog << "Error while parsing argv[" << i << "] int value" << endl; 
     exit(-1);
 }
 
@@ -24,7 +25,7 @@ void floatArg(int argc, char * argv[], int i, float * val) {
         *val = atof(argv[i]);
         return;
     }
-    wcerr << "Error while parsing argv[" << i << "] float value" << endl; 
+    clog << "Error while parsing argv[" << i << "] float value" << endl; 
     exit(-1);
 }
 
@@ -33,11 +34,11 @@ void stringArg(int argc, char * argv[], int i, char * val) {
         strcpy(val, argv[i]);
         return;
     }
-    wcerr << "Error while parsing argv[" << i << "] string" << endl; 
+    clog << "Error while parsing argv[" << i << "] string" << endl; 
     exit(-1);
 }
 
-template <typename T> void printMatrix(char * name, T * matrix, int rows, int cols) {
+template <typename T> void printMatrix(string name, T * matrix, int rows, int cols) {
 
     cout << "*** " << name << " ****" << endl;
     for (int i = 0; i < rows; ++i) {
@@ -62,7 +63,7 @@ void stopTimer() {
 void printTimer() {
     long msec = std::chrono::duration_cast<std::chrono::milliseconds>(endPoint - startPoint).count();
     long usec = std::chrono::duration_cast<std::chrono::microseconds>(endPoint - startPoint).count();
-    wcerr << "Compute time: " << msec << " ms " << usec << " usec " << endl;
+    clog << "Compute time: " << msec << " ms " << usec << " usec " << endl;
 }
 
 void stopAndPrintTimer() {
@@ -70,9 +71,9 @@ void stopAndPrintTimer() {
     printTimer();
 }
 
-void stopAndPrintTimer(char * name) {
+void stopAndPrintTimer(string name) {
     stopTimer();
-    wcerr << name;
+    clog << name;
     printTimer();
 }
 
