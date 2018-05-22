@@ -1,4 +1,4 @@
-#include <cfloat>
+#include <climits>
 
 #include "random.hpp"
 
@@ -47,7 +47,7 @@ class AcoCpu {
 
     void calcFitness() {   
         for (int i = 0; i < nCities * nCities; ++i) {
-            fitness[i] = pow(pheromone[i], alpha) + pow(eta[i], beta);
+            fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
         }
     }
 

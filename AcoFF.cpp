@@ -184,7 +184,7 @@ class AcoFF {
 
     void calcFitness() {   
         pfrFloat->parallel_for(0L, elems, [&fitness = fitness, &pheromone = pheromone, &eta = eta, &alpha = alpha, &beta = beta](const long i) {
-            fitness[i] = pow(pheromone[i], alpha) + pow(eta[i], beta);
+            fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
         });
     }
 

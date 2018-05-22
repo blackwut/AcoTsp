@@ -55,7 +55,7 @@ void calculateFitness(float * fitness, float * pheromone, float * eta, float alp
 
     if ( row >= rows || col >= cols ) return;
     
-    fitness[id] = __powf(pheromone[id], alpha) + __powf(eta[id], beta);
+    fitness[id] = __powf(pheromone[id], alpha) * __powf(eta[id], beta);
 }
 
 __global__
@@ -93,12 +93,12 @@ void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateX
         r = randXOR(state + idx) * sum;
         k = -1;
         for (j = 0; j < cols; ++j) {
-            // if ( k == -1 && p[j] > r ) {
-            //     k = j;
-            // }
-            k += (k == -1) * (p[j] > r) * j;
+            if ( k == -1 && p[j] > r ) {
+                k = j;
+            }
+            //k += (k == -1) * (p[j] > r) * j;
         }
-        k += 1;
+        //k += 1;
         visited[k] = 0;
         tabu[idx * cols + s] = k;
     }
@@ -253,7 +253,7 @@ int main(int argc, char * argv[]) {
     dim3 dimBlock2D(16, 16);
 
     dim3 gridAnt1D(numberOfBlocks(nAnts, dimBlock1D.x));
-    dim3 gridAnt2D(numberOfBlocks(nAnts, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
+    // dim3 gridAnt2D(numberOfBlocks(nAnts, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
     dim3 gridMatrix2D(numberOfBlocks(nCities, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
 
     initCurand<<<gridAnt1D, dimBlock1D>>>(state, seed, nAnts);
