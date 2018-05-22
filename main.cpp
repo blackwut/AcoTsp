@@ -5,23 +5,13 @@
 #include "common.hpp"
 #include "TSPReader.cpp"
 
-#ifdef ACO_CPU
 #include "AcoCpu.cpp"
-#endif
-#ifdef ACO_FF
 #include "AcoFF.cpp"
-#endif
 
 using namespace std;
 
 int main(int argc, char * argv[]) {
 
-#ifdef ACO_CPU
-    cout << "***** ACO CPU *****" << endl;
-#endif
-#ifdef ACO_FF
-    cout << "***** ACO FastFlow *****" << endl;
-#endif
 
     char * path = (char *) malloc(MAX_LEN);
     float alpha = 4.0f;
@@ -30,6 +20,10 @@ int main(int argc, char * argv[]) {
     float rho = 0.8f;
     int maxEpochs = 30;
     int nThreads = 8;
+
+    if (argc < 8) {
+        cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpochs nThreads" << endl;
+    }
 
     argc--;
     argv++;
@@ -45,28 +39,45 @@ int main(int argc, char * argv[]) {
     __seed__ = time(0);
 
     TSP * tsp = getTPSFromFile(path);
+    int * bestTour;
+    int bestTourLen;
 
-#ifdef ACO_CPU
-    AcoCpu aco(
-#endif
-#ifdef ACO_FF
-    AcoFF aco(
-#endif
-        tsp->numberOfCities, 
-        tsp->numberOfCities,
-        tsp->distance,
-        alpha, beta, q, rho, 
-        maxEpochs,
-        nThreads);
 
-    startTimer();
-    aco.solve();
-    stopAndPrintTimer();
+    if (nThreads <= 1) {
+        cout << "***** ACO CPU *****" << endl;
+        AcoCpu aco(tsp->numberOfCities, 
+                    tsp->numberOfCities,
+                    tsp->distance,
+                    alpha, beta, q, rho, 
+                    maxEpochs,
+                    nThreads);
 
-    int * bestTour = aco.getBestTour();
+        startTimer();
+        aco.solve();
+        stopAndPrintTimer();
 
+        bestTour = aco.getBestTour();
+        bestTourLen = aco.getBestTourLen();
+
+    } else {
+        cout << "***** ACO FastFlow *****" << endl;
+        AcoFF aco(tsp->numberOfCities, 
+                    tsp->numberOfCities,
+                    tsp->distance,
+                    alpha, beta, q, rho, 
+                    maxEpochs,
+                    nThreads);
+
+        startTimer();
+        aco.solve();
+        stopAndPrintTimer();
+
+        bestTour = aco.getBestTour();
+        bestTourLen = aco.getBestTourLen();
+    }
+        
     printMatrix("BestTour", bestTour, 1, tsp->numberOfCities);
-    cout << "BestTourLen: " << aco.getBestTourLen() << endl;
+    cout << "BestTourLen: " << bestTourLen << endl;
     cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
 
     free(path);
