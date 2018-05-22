@@ -22,6 +22,7 @@ typedef struct _city {
 
 
 typedef struct _tsp {
+    string name;
     int numberOfCities;
     float * distance;
 } TSP;
@@ -197,6 +198,7 @@ TSP * getTPSFromFile(string filename) {
     cout << endl;
 
     TSP * tsp = (TSP *) malloc( sizeof(TSP) );
+    tsp->name = name;
     tsp->numberOfCities = dimension;
     tsp->distance = matrix;
 
