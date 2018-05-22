@@ -14,7 +14,6 @@ __global__
 void initCurand(curandStateXORWOW_t * state, unsigned long seed, int nAnts)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    
     if ( idx >= nAnts ) return;
 
     curand_init(seed, idx, 0, &state[idx]);
@@ -51,9 +50,9 @@ void calculateFitness(float * fitness, float * pheromone, float * eta, float alp
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int id = row * cols + col;
-
     if ( row >= rows || col >= cols ) return;
+
+    int id = row * cols + col;
     
     fitness[id] = __powf(pheromone[id], alpha) * __powf(eta[id], beta);
 }
