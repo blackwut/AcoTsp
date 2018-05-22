@@ -12,7 +12,6 @@ using namespace std;
 
 int main(int argc, char * argv[]) {
 
-
     char * path = (char *) malloc(MAX_LEN);
     float alpha = 4.0f;
     float beta = 2.0f;
@@ -42,7 +41,6 @@ int main(int argc, char * argv[]) {
     TSP * tsp = getTPSFromFile(path);
     int * bestTour;
     int bestTourLen;
-
 
     if (nThreads <= 1) {
         cout << "***** ACO CPU *****" << endl;
@@ -76,10 +74,19 @@ int main(int argc, char * argv[]) {
         bestTour = aco.getBestTour();
         bestTourLen = aco.getBestTourLen();
     }
-        
+
     printMatrix("BestTour", bestTour, 1, tsp->numberOfCities);
     cout << "BestTourLen: " << bestTourLen << endl;
     cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
+
+#define LOG_SEP " "
+    clog << nThreads << LOG_SEP;
+    clog << maxEpochs << LOG_SEP;
+    clog << getTimerMS() << LOG_SEP;
+    clog << getTimerUS() << LOG_SEP;
+    clog << bestTourLen << LOG_SEP;
+    clog << (checkPathPossible(tsp, bestTour) == 1 ? "Y" : "N") << LOG_SEP;
+    clog << endl;
 
     free(path);
     free(tsp->distance);

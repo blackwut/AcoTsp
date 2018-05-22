@@ -60,10 +60,19 @@ void stopTimer() {
     endPoint = std::chrono::high_resolution_clock::now();
 }
 
+long getTimerMS() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(endPoint - startPoint).count();
+
+}
+
+long getTimerUS() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(endPoint - startPoint).count();
+}
+
 void printTimer() {
-    long msec = std::chrono::duration_cast<std::chrono::milliseconds>(endPoint - startPoint).count();
-    long usec = std::chrono::duration_cast<std::chrono::microseconds>(endPoint - startPoint).count();
-    clog << "Compute time: " << msec << " ms " << usec << " usec " << endl;
+    long msec = getTimerMS();
+    long usec = getTimerUS();
+    cout << "Compute time: " << msec << " ms " << usec << " usec " << endl;
 }
 
 void stopAndPrintTimer() {
@@ -73,7 +82,7 @@ void stopAndPrintTimer() {
 
 void stopAndPrintTimer(string name) {
     stopTimer();
-    clog << name;
+    cout << name;
     printTimer();
 }
 
