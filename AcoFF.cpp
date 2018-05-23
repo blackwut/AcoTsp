@@ -147,9 +147,11 @@ class AcoFF {
     ff_Farm<> * farmTour = NULL;
     Emitter * emitterTour = NULL;
 
-    ParallelForReduce<float> * pfrFloat = NULL;
-    ParallelForReduce<int> * pfrInt = NULL;
-    
+    //ParallelForReduce<float> * pfrFloat = NULL;
+    //ParallelForReduce<int> * pfrInt = NULL;
+    ParallelForReduce<float> pfrFloat;
+    ParallelForReduce<int> pfrInt;
+
     int nAnts;
     int nCities;
     float * distance;
@@ -176,19 +178,19 @@ class AcoFF {
     int * bestTour;
 
     void initPheromone(float initialPheromone) {
-        pfrFloat->parallel_for(0L, elems, [&pheromone = pheromone, &initialPheromone](const long i) {
+        pfrFloat.parallel_for(0L, elems, [&pheromone = pheromone, &initialPheromone](const long i) {
             pheromone[i] = initialPheromone;
         });
     }
 
     void initEta() {
-        pfrFloat->parallel_for(0L, elems, [&eta = eta, &distance = distance](const long i) {
+        pfrFloat.parallel_for(0L, elems, [&eta = eta, &distance = distance](const long i) {
             eta[i] = (distance[i] == 0 ? 0.0f : 1.0f / distance[i]);
         });
     }
 
     void calcFitness() {   
-        pfrFloat->parallel_for(0L, elems, [&fitness = fitness, &pheromone = pheromone, &eta = eta, &alpha = alpha, &beta = beta](const long i) {
+        pfrFloat.parallel_for(0L, elems, [&fitness = fitness, &pheromone = pheromone, &eta = eta, &alpha = alpha, &beta = beta](const long i) {
             fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
         });
     }
@@ -201,7 +203,7 @@ class AcoFF {
     }
 
     void calcBestTour() {      
-        pfrInt->parallel_reduce(bestTourLen, INT_MAX, 
+        pfrInt.parallel_reduce(bestTourLen, INT_MAX, 
                             0L, nAnts,
                             [&lengths = lengths](const long i, int &min) { min = (min > lengths[i] ? lengths[i] : min); },
                             [](int &v, const int &elem) { v = (v > elem ? elem : v); });
@@ -217,13 +219,13 @@ class AcoFF {
     }
 
     void clearDelta() {
-        pfrFloat->parallel_for(0L, elems, [&delta = delta](const long i) {
+        pfrFloat.parallel_for(0L, elems, [&delta = delta](const long i) {
             delta[i] = 0.0f;
         });
     }
 
     void updatePheromone() {
-        pfrFloat->parallel_for(0L, elems, [&pheromone = pheromone, &delta = delta, &rho = rho](const long i) {
+        pfrFloat.parallel_for(0L, elems, [&pheromone = pheromone, &delta = delta, &rho = rho](const long i) {
             pheromone[i] = pheromone[i] * (1 - rho) + delta[i];
         });
     }
@@ -245,8 +247,8 @@ class AcoFF {
         lengths = (int *) malloc(nAnts * sizeof(int));
         bestTour = (int *) malloc(nCities * sizeof(int));
 
-        pfrFloat = new ParallelForReduce<float>(nThreads, false);
-        pfrInt = new ParallelForReduce<int>(nThreads, false);
+        // pfrFloat = new ParallelForReduce<float>(nThreads, false);
+        // pfrInt = new ParallelForReduce<int>(nThreads, false);
 
         farmTour = new ff_Farm<>( [&distance = distance, &fitness = fitness, &tabu = tabu, &delta = delta, &lengths = lengths, &nAnts = nAnts, &nCities = nCities, &q = q, &nThreads = nThreads]() { 
             vector< unique_ptr<ff_node> > workers;
