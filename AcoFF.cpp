@@ -292,8 +292,8 @@ class AcoFF {
     }
 
     ~AcoFF(){
-        delete pfrFloat;
-        delete pfrInt;
+        // delete pfrFloat;
+        // delete pfrInt;
         delete emitterTour;
         delete farmTour;
         
