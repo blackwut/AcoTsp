@@ -248,9 +248,11 @@ int main(int argc, char * argv[]) {
         }
     }
 
+    dim3 dimBlockSmall(8);
     dim3 dimBlock1D(32);
     dim3 dimBlock2D(16, 16);
 
+    dim3 gridAntSmall(numberOfBlocks(nAnts, dimBlockSmall.x));
     dim3 gridAnt1D(numberOfBlocks(nAnts, dimBlock1D.x));
     // dim3 gridAnt2D(numberOfBlocks(nAnts, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
     dim3 gridMatrix2D(numberOfBlocks(nCities, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
@@ -261,7 +263,7 @@ int main(int argc, char * argv[]) {
     int epoch = 0;
     do {
         calculateFitness<<<gridMatrix2D, dimBlock2D>>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);        
-        claculateTour<<<gridAnt1D, dimBlock1D>>>(tabu, fitness, nAnts, nCities, state);
+        claculateTour<<<gridAntSmall, dimBlockSmall>>>(tabu, fitness, nAnts, nCities, state);
         calculateTourLen<<<gridAnt1D, dimBlock1D>>>(tabu, distance, tourLen, nAnts, nCities);
         
         updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1)== maxEpochs));
