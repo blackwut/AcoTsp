@@ -62,7 +62,7 @@ int main(int argc, char * argv[]) {
         cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
 
     #define LOG_SEP " "
-        clog << tsp->name << LOG_SEP;
+//        clog << tsp->name << LOG_SEP;
         clog << nThreads << LOG_SEP;
         clog << maxEpochs << LOG_SEP;
         clog << getTimerMS() << LOG_SEP;
@@ -92,7 +92,7 @@ int main(int argc, char * argv[]) {
         cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
 
     #define LOG_SEP " "
-        clog << tsp->name << LOG_SEP;
+//        clog << tsp->name << LOG_SEP;
         clog << nThreads << LOG_SEP;
         clog << maxEpochs << LOG_SEP;
         clog << getTimerMS() << LOG_SEP;
