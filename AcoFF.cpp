@@ -245,8 +245,8 @@ class AcoFF {
         lengths = (int *) malloc(nAnts * sizeof(int));
         bestTour = (int *) malloc(nCities * sizeof(int));
 
-        pfrFloat = new ParallelForReduce<float>(FF_AUTO, false);
-        pfrInt = new ParallelForReduce<int>(FF_AUTO, false);
+        pfrFloat = new ParallelForReduce<float>(nThreads, false);
+        pfrInt = new ParallelForReduce<int>(nThreads, false);
 
         farmTour = new ff_Farm<>( [&distance = distance, &fitness = fitness, &tabu = tabu, &delta = delta, &lengths = lengths, &nAnts = nAnts, &nCities = nCities, &q = q, &nThreads = nThreads]() { 
             vector< unique_ptr<ff_node> > workers;
