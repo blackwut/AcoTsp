@@ -198,7 +198,7 @@ TSP * getTPSFromFile(string filename) {
     cout << endl;
 
     TSP * tsp = (TSP *) malloc( sizeof(TSP) );
-    tsp->name = name;
+    tsp->name += name;
     tsp->numberOfCities = dimension;
     tsp->distance = matrix;
 
