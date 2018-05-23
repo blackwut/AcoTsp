@@ -16,7 +16,6 @@ class AcoCpu {
     float q = 100.0f;
     float rho = 0.5f;   
     int maxEpoch;
-    int nThreads;
 
     int elems;
     
@@ -149,7 +148,7 @@ class AcoCpu {
 
     public:
 
-    AcoCpu(int nAnts, int nCities, float * distance, float alpha, float beta, float q, float rho, int maxEpoch, int nThreads)
+    AcoCpu(int nAnts, int nCities, float * distance, float alpha, float beta, float q, float rho, int maxEpoch)
     : nAnts(nAnts), nCities(nCities), distance(distance), alpha(alpha), beta(beta), q(q), rho(rho), maxEpoch(maxEpoch) {
 
         elems = nCities * nCities;
