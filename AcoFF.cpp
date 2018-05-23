@@ -1,10 +1,10 @@
 #include <atomic>
+#include <random>
 
 #include <ff/parallel_for.hpp>
 #include <ff/farm.hpp>
 
 #include "common.hpp"
-#include "random.hpp"
 
 using namespace std;
 using namespace ff;
@@ -64,6 +64,9 @@ struct Worker: ff_node_t<int> {
     int nCities;
     float q;
 
+    std::mt19937 * generator = NULL;
+    std::uniform_real_distribution<float> * distribution = NULL;
+
     Worker(float * distance, float * fitness, int * tabu, atomic<float> * delta, int * lengths, int nAnts, int nCities, float q)
     : distance(distance), fitness(fitness), tabu(tabu), delta(delta), lengths(lengths), nAnts(nAnts), nCities(nCities), q(q) {}
 
@@ -71,15 +74,17 @@ struct Worker: ff_node_t<int> {
 
         if (visited == NULL) visited = (int *) malloc(nCities * sizeof(int));
         if (p == NULL) p = (float *) malloc(nCities * sizeof(float));
-        if (in == EOS) { free(visited); free(p); return EOS;}
+        if (generator == NULL) generator = new std::mt19937(time(0));
+        if (distribution == NULL) distribution = new std::uniform_real_distribution<float>(0.0f, 1.0f);
+        if (in == EOS) { free(visited); free(p); delete distribution; delete generator; return EOS;}
 
-        int id = *in;
+        int id = *in;        
 
         for (int i = 0; i < nCities; ++i) {
             visited[i] = 1;
         }
 
-        int k = randFloat() * nCities;
+        int k = distribution->operator()(*generator) * nCities;
         visited[k] = 0;
         tabu[id * nCities] = k; 
         
@@ -94,7 +99,7 @@ struct Worker: ff_node_t<int> {
                 p[j] = sum;
             }
 
-            float r = randFloat() * sum;
+            float r = distribution->operator()(*generator) * sum;
             k = -1;
             for (int j = 0; j < nCities; ++j) {
                 if ( k == -1 && p[j] > r) {
@@ -139,11 +144,11 @@ class AcoFF {
 
     private:
 
-    ff_Farm<> * farmTour;
-    Emitter * emitterTour;
+    ff_Farm<> * farmTour = NULL;
+    Emitter * emitterTour = NULL;
 
-    ParallelForReduce<float> * pfrFloat;
-    ParallelForReduce<int> * pfrInt;
+    ParallelForReduce<float> * pfrFloat = NULL;
+    ParallelForReduce<int> * pfrInt = NULL;
     
     int nAnts;
     int nCities;
