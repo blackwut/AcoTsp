@@ -1,9 +1,5 @@
 #include <iostream>
-#include <fstream>
 #include <cmath>
-
-#include "common.hpp"
-#include "TSPReader.cpp"
 
 #include "AcoCpu.cpp"
 #include "AcoFF.cpp"
@@ -17,11 +13,11 @@ int main(int argc, char * argv[]) {
     float beta = 2.0f;
     float q = 55.0f;
     float rho = 0.8f;
-    int maxEpochs = 30;
+    int maxEpoch = 30;
     int nThreads = 8;
 
     if (argc < 8) {
-        cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpochs nThreads" << endl;
+		cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpoch nThreads" << endl;
         exit(-1);
     }
 
@@ -33,78 +29,47 @@ int main(int argc, char * argv[]) {
     floatArg(argc, argv, args++, &beta);
     floatArg(argc, argv, args++, &q);
     floatArg(argc, argv, args++, &rho);
-    intArg(argc, argv, args++, &maxEpochs);
+    intArg(argc, argv, args++, &maxEpoch);
     intArg(argc, argv, args++, &nThreads);
 
-    __seed__ = time(0);
-
-    TSP * tsp = getTPSFromFile(path);
-    int * bestTour;
-    int bestTourLen;
+	TSP<float> * tsp = new TSP<float>::TSP(path);
+	ACO<float> * aco = new ACO<float>::ACO(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch);
 
     if (nThreads <= 1) {
+		
         cout << "***** ACO CPU *****" << endl;
-        AcoCpu aco(tsp->numberOfCities, 
-                    tsp->numberOfCities,
-                    tsp->distance,
-                    alpha, beta, q, rho, 
-                    maxEpochs);
+        AcoCpu<float> acocpu(aco, tsp);
 
         startTimer();
-        aco.solve();
+        acocpu.solve();
         stopAndPrintTimer();
-
-        bestTour = aco.getBestTour();
-        bestTourLen = aco.getBestTourLen();
-
-        printMatrix("BestTour", bestTour, 1, tsp->numberOfCities);
-        cout << "BestTourLen: " << bestTourLen << endl;
-        cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
-
-    #define LOG_SEP " "
-//        clog << tsp->name << LOG_SEP;
-        clog << nThreads << LOG_SEP;
-        clog << maxEpochs << LOG_SEP;
-        clog << getTimerMS() << LOG_SEP;
-        clog << getTimerUS() << LOG_SEP;
-        clog << bestTourLen << LOG_SEP;
-        clog << (checkPathPossible(tsp, bestTour) == 1 ? "Y" : "N") << LOG_SEP;
-        clog << endl;
 
     } else {
+		
         cout << "***** ACO FastFlow *****" << endl;
-        AcoFF aco(tsp->numberOfCities, 
-                    tsp->numberOfCities,
-                    tsp->distance,
-                    alpha, beta, q, rho, 
-                    maxEpochs,
-                    nThreads);
-
+		AcoFF<float> acoff(aco, tsp, nThreads);
         startTimer();
-        aco.solve();
+        acoff.solve();
         stopAndPrintTimer();
-
-        bestTour = aco.getBestTour();
-        bestTourLen = aco.getBestTourLen();
-
-        printMatrix("BestTour", bestTour, 1, tsp->numberOfCities);
-        cout << "BestTourLen: " << bestTourLen << endl;
-        cout << (checkPathPossible(tsp, bestTour) == 1 ? "Path OK!" : "Error in the path!") << endl;
-
-    #define LOG_SEP " "
-//        clog << tsp->name << LOG_SEP;
-        clog << nThreads << LOG_SEP;
-        clog << maxEpochs << LOG_SEP;
-        clog << getTimerMS() << LOG_SEP;
-        clog << getTimerUS() << LOG_SEP;
-        clog << bestTourLen << LOG_SEP;
-        clog << (checkPathPossible(tsp, bestTour) == 1 ? "Y" : "N") << LOG_SEP;
-        clog << endl;
     }
 
+	if ( tsp->checkPath(aco->bestTour) ) {
+		aco->printBestTour();
+	}
+	
+#define LOG_SEP " "
+	clog << tsp->getName() << LOG_SEP;
+	clog << nThreads << LOG_SEP;
+	clog << maxEpoch << LOG_SEP;
+	clog << getTimerMS() << LOG_SEP;
+	clog << getTimerUS() << LOG_SEP;
+	clog << aco->bestTourLen << LOG_SEP;
+	clog << (tsp->checkPath(aco->bestTour) == 1 ? "Y" : "N") << LOG_SEP;
+	clog << endl;
+	
     free(path);
-    free(tsp->distance);
     free(tsp);
+	free(aco);
 
     return 0;
 }
