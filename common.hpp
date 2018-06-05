@@ -1,16 +1,24 @@
 #ifndef __COMMON_HPP__
 #define __COMMON_HPP__
 
+#include <iostream>
 #include <string>
 #include <cstring>
-#include <iostream>
 #include <iomanip>
 #include <ctime>
 #include <chrono>
 
 using namespace std;
 
-#define MAX_LEN 1024
+enum ERROR {
+    EXIT_LOAD_TSP_FILE = 32,
+    EXIT_EDGE_WEIGHT_TYPE,
+    EXIT_EDGE_WEIGHT_FORMAT,
+    EXIT_NODE_COORD_TYPE
+};
+
+
+#define MAX_LEN 256
 
 void intArg(int argc, char * argv[], int i, int * val) {
     if (argc > i) {
