@@ -1,208 +1,177 @@
+#include <random>
 #include <climits>
 
-#include "random.hpp"
+#include "ACO.cpp"
+#include "TSP.cpp"
 
 using namespace std;
 
+
+template <typename T>
 class AcoCpu {
-
-    private:
-        
-    int nAnts;
-    int nCities;
-    float * distance;
-    float alpha = 1.0f;
-    float beta = 1.0f;
-    float q = 100.0f;
-    float rho = 0.5f;   
-    int maxEpoch;
-
-    int elems;
-    
-    float * eta;
-    float * fitness;
-    float * delta;
-    float * pheromone;
-
-    int * visited;
-    int * tabu;
-    float * p;
-    int * lengths;
-
-    int bestTourLen;
-    int * bestTour;
-
-    void initPheromone(float initialPheromone) {
-        for (int i = 0; i < nCities * nCities; ++i) {
-            pheromone[i] = initialPheromone;
-        }
-    }
-
-    void initEta() {
-        for (int i = 0; i < nCities * nCities; ++i) {
-            eta[i] = (distance[i] == 0 ? 0.0f : 1.0f / distance[i]);
-        }
-    }
-
-    void calcFitness() {   
-        for (int i = 0; i < nCities * nCities; ++i) {
-            fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
-        }
-    }
-
-    void calcTour() {
-
-        for (int i = 0; i < nAnts * nCities; ++i) {
-            visited[i] = 1;
-        }
-
-        for (int id = 0; id < nAnts; ++id) {
-
-            int k = randFloat() * nCities;
-            visited[id * nCities + k] = 0;
-            tabu[id * nCities] = k;
-
-            float sum;
-            int i;
-            for (int s = 1; s < nCities; ++s) {
-                sum = 0.0f;
-
-                i = k;
-                for (int j = 0; j < nCities; ++j) {
-                    sum += fitness[i * nCities + j] * visited[id * nCities + j];
-                    p[id * nCities + j] = sum;
-                }
-
-                float r = randFloat() * sum;
-                k = -1;
-                for (int j = 0; j < nCities; ++j) {
-                    if ( k == -1 && p[id * nCities +j] > r) {
-                        k = j;
-                        break;
-                    }
-                }
-
-                visited[id * nCities + k] = 0;
-                tabu[id * nCities + s] = k;
-            }
-
-            float length = 0.0f;
-            int from;
-            int to;
-            for (i = 0; i < nCities - 1; ++i) {
-                from = tabu[id * nCities + i];
-                to = tabu[id * nCities + i + 1];
-                length += distance[from * nCities + to];
-            }
-            from = tabu[id * nCities + nCities - 1];
-            to = tabu[id * nCities];
-            length += distance[from * nCities + to];
-
-            lengths[id] = (int)length;
-        }
-    }
-
-    void calcBestTour() {      
-        for (int i = 0; i < nAnts; ++i) {
-            if (bestTourLen > lengths[i]) {
-                bestTourLen = lengths[i];
-            }
-        }
-
-        for (int i = 0; i < nAnts; ++i) {
-            if (lengths[i] == bestTourLen) {
-                for (int j = 0; j < nCities; ++j) {
-                    bestTour[j] = tabu[i * nCities + j];
-                }
-                break;
-            }
-        }
-    }
-
-    void clearDelta() {
-        for (int i = 0; i < nCities * nCities; ++i) {
-            delta[i] = 0.0f;
-        }
-    }
-
-    void updateDelta() {
-        int from;
-        int to;
-        for (int i = 0; i < nAnts; ++i) {
-            for (int j = 0; j < nCities - 1; ++j) {
-                from = tabu[i * nCities + j];
-                to = tabu[i * nCities + j + 1];
-                delta[from * nCities + to] += q / lengths[i];
-            }
-            from = tabu[i * nCities + nCities - 1];
-            to = tabu[i * nCities];
-            delta[from * nCities + to] += q / lengths[i];
-        }
-    }
-
-    void updatePheromone() {
-        for (int i = 0; i < nCities * nCities; ++i) {
-            pheromone[i] = pheromone[i] * (1 - rho) + delta[i];
-        }
-    }
-
-    public:
-
-    AcoCpu(int nAnts, int nCities, float * distance, float alpha, float beta, float q, float rho, int maxEpoch)
-    : nAnts(nAnts), nCities(nCities), distance(distance), alpha(alpha), beta(beta), q(q), rho(rho), maxEpoch(maxEpoch) {
-
-        elems = nCities * nCities;
-        eta = (float *) malloc(elems * sizeof(float));
-        fitness = (float *) malloc(elems * sizeof(float));
-        delta = (float *) malloc(elems * sizeof(float));
-        pheromone = (float *) malloc(elems * sizeof(float));
-
-        visited = (int *) malloc(nAnts * nCities * sizeof(int));
-        tabu = (int *) malloc(nAnts * nCities * sizeof(int));
-        p = (float *) malloc(nAnts * nCities * sizeof(float));
-        lengths = (int *) malloc(nAnts * sizeof(int));
-        bestTour = (int *) malloc(nCities * sizeof(int));
-    }
-
-    void solve() {
-
-        bestTourLen = INT_MAX;
-
-        float initialPheromone = 1.0f / nCities;
-        initPheromone(initialPheromone);
-        initEta();
-        
-        int epoch = 0;
-        do {
-
-            calcFitness();
-            calcTour();
-            calcBestTour();
-            clearDelta();
-            updateDelta();
-            updatePheromone();
-
-        } while (++epoch < maxEpoch);
-    }
-
-    int * getBestTour() {
-        return bestTour;
-    }
-
-    int getBestTourLen() {
-        return bestTourLen;
-    }
-
-    ~AcoCpu(){
-        free(eta);
-        free(fitness);
-        free(delta);
-        free(pheromone);
-
-        free(visited);
-        free(tabu);
-        free(p);
-        free(lengths);
-        free(bestTour);
-    }
+	
+private:
+	
+	ACO<T> * aco;
+	TSP<T> * tsp;
+	
+	int epoch;
+	unsigned int seed = 123;
+	
+	T randFloat() {
+		static std::mt19937 generator(seed);
+		static std::uniform_real_distribution<T> distribution(0.0f, 1.0f);
+		return distribution(generator);
+	}
+	
+	void initPheromone(float initialPheromone) {
+		for (int i = 0; i < aco->elems; ++i) {
+			aco->pheromone[i] = initialPheromone;
+		}
+	}
+	
+	void initEta() {
+		for (int i = 0; i < aco->elems; ++i) {
+			aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
+		}
+	}
+	
+	void calcfitness() {
+		for (int i = 0; i < aco->elems; ++i) {
+			aco->fitness[i] = pow(aco->pheromone[i], aco->alpha) * pow(aco->eta[i], aco->beta);
+		}
+	}
+	
+	void calcTour() {
+		
+		for (int i = 0; i < aco->nAnts * tsp->dimension; ++i) {
+			aco->visited[i] = 1;
+		}
+		
+		for (int id = 0; id < aco->nAnts; ++id) {
+			
+			int k = randFloat() * aco->nAnts;
+			aco->visited[id * tsp->dimension + k] = 0;
+			aco->tabu[id * tsp->dimension] = k;
+			
+			for (int s = 1; s < tsp->dimension; ++s) {
+				float sum = 0.0f;
+				
+				int i = k;
+				for (int j = 0; j < tsp->dimension; ++j) {
+					sum += aco->fitness[i * tsp->dimension + j] * aco->visited[id * tsp->dimension + j];
+					aco->p[id * tsp->dimension + j] = sum;
+				}
+				
+				float r = randFloat() * sum;
+				k = -1;
+				for (int j = 0; j < tsp->dimension; ++j) {
+					if ( k == -1 && aco->p[id * tsp->dimension +j] > r ) {
+						k = j;
+						break;
+					}
+				}
+				
+				if ( k == -1 ) {
+					k = tsp->dimension - 1;
+				}
+				
+				aco->visited[id * tsp->dimension + k] = 0;
+				aco->tabu[id * tsp->dimension + s] = k;
+			}
+			
+			float length = 0.0f;
+			int from;
+			int to;
+			for (int i = 0; i < tsp->dimension - 1; ++i) {
+				from = aco->tabu[id * tsp->dimension + i];
+				to = aco->tabu[id * tsp->dimension + i + 1];
+				length += tsp->edges[from * tsp->dimension + to];
+			}
+			from = aco->tabu[id * tsp->dimension + tsp->dimension - 1];
+			to = aco->tabu[id * tsp->dimension];
+			length += tsp->edges[from * tsp->dimension + to];
+			
+			aco->lengths[id] = (int)length;
+		}
+	}
+	
+	void calcBestTour() {
+		for (int i = 0; i < aco->nAnts; ++i) {
+			if (aco->bestTourLen > aco->lengths[i]) {
+				aco->bestTourLen = aco->lengths[i];
+			}
+		}
+		
+		for (int i = 0; i < aco->nAnts; ++i) {
+			if (aco->lengths[i] == aco->bestTourLen) {
+				for (int j = 0; j < tsp->dimension; ++j) {
+					aco->bestTour[j] = aco->tabu[i * tsp->dimension + j];
+				}
+				break;
+			}
+		}
+	}
+	
+	void clearDelta() {
+		for (int i = 0; i < tsp->dimension * tsp->dimension; ++i) {
+			aco->delta[i] = 0.0f;
+		}
+	}
+	
+	void updateDelta() {
+		int from;
+		int to;
+		for (int i = 0; i < aco->nAnts; ++i) {
+			for (int j = 0; j < tsp->dimension - 1; ++j) {
+				from = aco->tabu[i * tsp->dimension + j];
+				to = aco->tabu[i * tsp->dimension + j + 1];
+				aco->delta[from * tsp->dimension + to] += aco->q / aco->lengths[i];
+			}
+			from = aco->tabu[i * tsp->dimension + tsp->dimension - 1];
+			to = aco->tabu[i * tsp->dimension];
+			aco->delta[from * tsp->dimension + to] += aco->q / aco->lengths[i];
+		}
+	}
+	
+	void updatePheromone() {
+		for (int i = 0; i < tsp->dimension * tsp->dimension; ++i) {
+			aco->pheromone[i] = aco->pheromone[i] * (1 - aco->rho) + aco->delta[i];
+		}
+	}
+	
+public:
+	
+	AcoCpu(ACO<T> * aco, TSP<T> * tsp)
+	: aco(aco), tsp(tsp)
+	{
+		epoch = 0;
+		seed = (unsigned int) time(0);
+	}
+	
+	void nextIteration() {
+		epoch++;
+		calcfitness();
+		calcTour();
+		calcBestTour();
+		clearDelta();
+		updateDelta();
+		updatePheromone();
+	}
+	
+	void solve() {
+		
+		aco->bestTourLen = INT_MAX;
+		epoch = 0;
+		
+		float initialPheromone = 1.0f / tsp->dimension;
+		initPheromone(initialPheromone);
+		initEta();
+		
+		do {
+			nextIteration();
+		} while (epoch < aco->maxEpoch);
+	}
+	
+	~AcoCpu(){}
 };
