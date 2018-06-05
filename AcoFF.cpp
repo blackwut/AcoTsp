@@ -1,24 +1,16 @@
-#include <atomic>
 #include <random>
+#include <limits>
+#include <cstddef>
 
 #include <ff/parallel_for.hpp>
 #include <ff/farm.hpp>
 
-#include "common.hpp"
+#include "ACO.cpp"
+#include "TSP.cpp"
 
 using namespace std;
 using namespace ff;
 
-float atomic_addf(atomic<float> * f, float d){
-      float old = f->load(std::memory_order_consume);
-      float desired = old + d;
-      while (!f->compare_exchange_weak(old, desired,
-           std::memory_order_release, std::memory_order_consume))
-      {
-           desired = old + d;
-      }
-      return desired;
- }
 
 struct Emitter: ff_node_t<int> {
 
@@ -46,152 +38,136 @@ struct Emitter: ff_node_t<int> {
     }
 };
 
+template <typename T>
 struct Worker: ff_node_t<int> {
 
-    //Read only values
-    float * distance; 
-    float * fitness;
-
-    //Ants values
-    int * visited = NULL;
-    float * p = NULL;
-
-    int * tabu;
-    atomic<float> * delta;
-    int * lengths;
-
-    int nAnts;
-    int nCities;
-    float q;
-
     std::mt19937 * generator = NULL;
-    std::uniform_real_distribution<float> * distribution = NULL;
+    std::uniform_real_distribution<T> * distribution = NULL;
 
-    Worker(float * distance, float * fitness, int * tabu, atomic<float> * delta, int * lengths, int nAnts, int nCities, float q)
-    : distance(distance), fitness(fitness), tabu(tabu), delta(delta), lengths(lengths), nAnts(nAnts), nCities(nCities), q(q) {}
+	ACO<T> * aco = NULL;
+	TSP<T> * tsp = NULL;
+	
+	Worker(ACO<T> * aco, TSP<T> * tsp)
+	: aco(aco), tsp(tsp)
+	{
+		generator = new std::mt19937((unsigned int)time(0));
+		distribution = new std::uniform_real_distribution<T>(0, 1);
+	}
 
+	T nextFloat() {
+		return distribution->operator()(*generator);
+	}
+	
+	T atomic_addf(atomic<T> * f, T d){
+		T old = f->load(std::memory_order_consume);
+		T desired = old + d;
+		while (!f->compare_exchange_weak(old, desired,
+										 std::memory_order_release, std::memory_order_consume))
+		{
+			desired = old + d;
+		}
+		return desired;
+	}
+	
     int * svc(int * in) {
 
-        if (visited == NULL) visited = (int *) malloc(nCities * sizeof(int));
-        if (p == NULL) p = (float *) malloc(nCities * sizeof(float));
-        if (generator == NULL) generator = new std::mt19937(time(0));
-        if (distribution == NULL) distribution = new std::uniform_real_distribution<float>(0.0f, 1.0f);
-        if (in == EOS) { free(visited); free(p); delete distribution; delete generator; return EOS;}
+        if (in == EOS) return EOS;
 
         int id = *in;        
 
-        for (int i = 0; i < nCities; ++i) {
-            visited[i] = 1;
+        for (int i = 0; i < aco->nCities; ++i) {
+            aco->visited[id * aco->nCities + i] = 1;
         }
 
-        int k = distribution->operator()(*generator) * nCities;
-        visited[k] = 0;
-        tabu[id * nCities] = k; 
+        int k = nextFloat() * aco->nCities;
+        aco->visited[id * aco->nCities +k] = 0;
+        aco->tabu[id * aco->nCities] = k;
         
-        float sum;
-        int i;
-        for (int s = 1; s < nCities; ++s) {
-            sum = 0.0f;
+        for (int s = 1; s < aco->nCities; ++s) {
+            T sum = 0;
 
-            i = k;
-            for (int j = 0; j < nCities; ++j) {
-                sum += fitness[i * nCities + j] * visited[j];
-                p[j] = sum;
+            int i = k;
+            for (int j = 0; j < aco->nCities; ++j) {
+                sum += aco->fitness[i * aco->nCities + j] * aco->visited[id * aco->nCities + j];
+                aco->p[id * aco->nCities + j] = sum;
             }
 
-            float r = distribution->operator()(*generator) * sum;
+            T r = nextFloat() * sum;
             k = -1;
-            for (int j = 0; j < nCities; ++j) {
-                if ( k == -1 && p[j] > r) {
+            for (int j = 0; j < aco->nCities; ++j) {
+                if ( k == -1 && aco->p[id * aco->nCities + j] > r) {
                     k = j;
                     break;
                 }
             }
 
-            visited[k] = 0;
-            tabu[id * nCities + s] = k;
+            aco->visited[id * aco->nCities + k] = 0;
+            aco->tabu[id * aco->nCities + s] = k;
         }
 
-        float length = 0.0f;
+        T length = 0;
         int from;
         int to;
-        for (i = 0; i < nCities - 1; ++i) {
-            from = tabu[id * nCities + i];
-            to = tabu[id * nCities + i + 1];
-            length += distance[from * nCities + to];
+        for (int i = 0; i < aco->nCities - 1; ++i) {
+            from = aco->tabu[id * aco->nCities + i];
+            to = aco->tabu[id * aco->nCities + i + 1];
+            length += tsp->edges[from * aco->nCities + to];
         }
-        from = tabu[id * nCities + nCities - 1];
-        to = tabu[id * nCities];
-        length += distance[from * nCities + to];
+        from = aco->tabu[id * aco->nCities + aco->nCities - 1];
+        to = aco->tabu[id * aco->nCities];
+        length += tsp->edges[from * aco->nCities + to];
 
-        lengths[id] = (int)length;
+        aco->lengths[id] = (int)length;
 
-        float d = q / length;
-        for (int j = 0; j < nCities - 1; ++j) {
-            from = tabu[id * nCities + j];
-            to = tabu[id * nCities + j + 1];
-            atomic_addf( (delta + (from * nCities + to)), d ); 
+        T d = aco->q / length;
+        for (int j = 0; j < aco->nCities - 1; ++j) {
+            from = aco->tabu[id * aco->nCities + j];
+            to = aco->tabu[id * aco->nCities + j + 1];
+            atomic_addf( (aco->adelta + (from * aco->nCities + to)), d );
         }
-        from = tabu[i * nCities + nCities - 1];
-        to = tabu[i * nCities];
-        atomic_addf( (delta + (from * nCities + to)), d ); 
+        from = aco->tabu[k * aco->nCities + aco->nCities - 1];
+        to = aco->tabu[k * aco->nCities];
+        atomic_addf( (aco->adelta + (from * aco->nCities + to)), d );
 
         return in;
     }
+	
+	~Worker() {
+		delete generator;
+		delete distribution;
+	}
 };
 
+template <typename T>
 class AcoFF {
 
     private:
+	
+	ACO<T> * aco = NULL;
+	TSP<T> * tsp = NULL;
 
     ff_Farm<> * farmTour = NULL;
     Emitter * emitterTour = NULL;
 
-    //ParallelForReduce<float> * pfrFloat = NULL;
-    //ParallelForReduce<int> * pfrInt = NULL;
-    ParallelForReduce<float> pfrFloat;
-    ParallelForReduce<int> pfrInt;
+    ParallelForReduce<T> pfr;
+	
+	int epoch;
 
-    int nAnts;
-    int nCities;
-    float * distance;
-    float alpha = 1.0f;
-    float beta = 1.0f;
-    float q = 100.0f;
-    float rho = 0.5f;   
-    int maxEpoch;
-    int nThreads;
-
-    int elems;
-    
-    float * eta;
-    float * fitness;
-    atomic<float> * delta;
-    float * pheromone;
-
-    int * visited;
-    int * tabu;
-    float * p;
-    int * lengths;
-
-    int bestTourLen;
-    int * bestTour;
-
-    void initPheromone(float initialPheromone) {
-        pfrFloat.parallel_for(0L, elems, [&pheromone = pheromone, &initialPheromone](const long i) {
-            pheromone[i] = initialPheromone;
+    void initPheromone(T initialPheromone) {
+        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+            aco->pheromone[i] = initialPheromone;
         });
     }
 
     void initEta() {
-        pfrFloat.parallel_for(0L, elems, [&eta = eta, &distance = distance](const long i) {
-            eta[i] = (distance[i] == 0 ? 0.0f : 1.0f / distance[i]);
+        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+            aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
         });
     }
 
-    void calcFitness() {   
-        pfrFloat.parallel_for(0L, elems, [&fitness = fitness, &pheromone = pheromone, &eta = eta, &alpha = alpha, &beta = beta](const long i) {
-            fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
+    void calcFitness() {
+        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+            aco->fitness[i] = pow(aco->pheromone[i], aco->alpha) * pow(aco->eta[i], aco->beta);
         });
     }
 
@@ -202,16 +178,18 @@ class AcoFF {
         }
     }
 
-    void calcBestTour() {      
-        pfrInt.parallel_reduce(bestTourLen, INT_MAX, 
-                            0L, nAnts,
-                            [&lengths = lengths](const long i, int &min) { min = (min > lengths[i] ? lengths[i] : min); },
-                            [](int &v, const int &elem) { v = (v > elem ? elem : v); });
+    void calcBestTour() {
+		T maxT = numeric_limits<T>::max();
+		
+		pfr.parallel_reduce(aco->bestTourLen, maxT,
+							0L, aco->nAnts,
+							[&](const long i, T &min) { min = (min > aco->lengths[i] ? aco->lengths[i] : min); },
+							[](T &v, const T &elem) { v = (v > elem ? elem : v); });
 
-        for (int i = 0; i < nAnts; ++i) {
-            if (lengths[i] == bestTourLen) {
-                for (int j = 0; j < nCities; ++j) {
-                    bestTour[j] = tabu[i * nCities + j];
+        for (int i = 0; i < aco->nAnts; ++i) {
+            if (aco->lengths[i] == aco->bestTourLen) {
+                for (int j = 0; j < aco->nCities; ++j) {
+                    aco->bestTour[j] = aco->tabu[i * aco->nCities + j];
                 }
                 break;
             }
@@ -219,93 +197,63 @@ class AcoFF {
     }
 
     void clearDelta() {
-        pfrFloat.parallel_for(0L, elems, [&delta = delta](const long i) {
-            delta[i] = 0.0f;
-        });
+        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+			aco->adelta[i] = 0;
+			
+		});
     }
 
     void updatePheromone() {
-        pfrFloat.parallel_for(0L, elems, [&pheromone = pheromone, &delta = delta, &rho = rho](const long i) {
-            pheromone[i] = pheromone[i] * (1 - rho) + delta[i];
+        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+            aco->pheromone[i] = aco->pheromone[i] * (1 - aco->rho) + aco->adelta[i];
         });
     }
 
     public:
 
-    AcoFF(int nAnts, int nCities, float * distance, float alpha, float beta, float q, float rho, int maxEpoch, int nThreads)
-    : nAnts(nAnts), nCities(nCities), distance(distance), alpha(alpha), beta(beta), q(q), rho(rho), maxEpoch(maxEpoch), nThreads(nThreads) {
-
-        elems = nCities * nCities;
-        eta = (float *) malloc(elems * sizeof(float));
-        fitness = (float *) malloc(elems * sizeof(float));
-        delta = (atomic<float> *) malloc(elems * sizeof(atomic<float>));
-        pheromone = (float *) malloc(elems * sizeof(float));
-
-        visited = (int *) malloc(nAnts * nCities * sizeof(int));
-        tabu = (int *) malloc(nAnts * nCities * sizeof(int));
-        p = (float *) malloc(nAnts * nCities * sizeof(float));
-        lengths = (int *) malloc(nAnts * sizeof(int));
-        bestTour = (int *) malloc(nCities * sizeof(int));
-
-        // pfrFloat = new ParallelForReduce<float>(nThreads, false);
-        // pfrInt = new ParallelForReduce<int>(nThreads, false);
-
-        farmTour = new ff_Farm<>( [&distance = distance, &fitness = fitness, &tabu = tabu, &delta = delta, &lengths = lengths, &nAnts = nAnts, &nCities = nCities, &q = q, &nThreads = nThreads]() { 
+    AcoFF(ACO<T> * aco, TSP<T> * tsp, int nThreads)
+    : aco(aco), tsp(tsp)
+	{
+        farmTour = new ff_Farm<>( [&]() {
             vector< unique_ptr<ff_node> > workers;
             for(int i = 0; i < nThreads; ++i)
-                workers.push_back( make_unique<Worker>(distance, fitness, tabu, delta, lengths, nAnts, nCities, q) );
+                workers.push_back( make_unique< Worker<T> >(aco, tsp) );
             return workers;
         }());
 
-        emitterTour = new Emitter(farmTour->getlb(), nAnts);
-        farmTour->add_emitter(*emitterTour);      // replacing the default emitter
-        farmTour->remove_collector();  // removing the default collector
-        farmTour->wrap_around();       // adds feedback channel between worker and emitter
+        emitterTour = new Emitter(farmTour->getlb(), aco->nAnts);
+        farmTour->add_emitter(*emitterTour);
+        farmTour->remove_collector();
+        farmTour->wrap_around();
+		
+		epoch = 0;
     }
 
+	void nextIteration() {
+		epoch++;
+		calcFitness();
+		clearDelta();
+		calcTour();
+		calcBestTour();
+		updatePheromone();
+	}
+	
     void solve() {
-
-        bestTourLen = INT_MAX;
-
-        float initialPheromone = 1.0f / nCities;
-        initPheromone(initialPheromone);
-        initEta();
-        
-        int epoch = 0;
-        do {
-
-            calcFitness();
-            clearDelta();
-            calcTour();
-            calcBestTour();
-            updatePheromone();
-
-        } while (++epoch < maxEpoch);
+		
+		aco->bestTourLen = INT_MAX;
+		epoch = 0;
+		
+		T initialPheromone = 1.0f / tsp->dimension;
+		initPheromone(initialPheromone);
+		initEta();
+		
+		do {
+			nextIteration();
+		} while (epoch < aco->maxEpoch);
     }
 
-    int * getBestTour() {
-        return bestTour;
-    }
-
-    int getBestTourLen() {
-        return bestTourLen;
-    }
-
-    ~AcoFF(){
-        // delete pfrFloat;
-        // delete pfrInt;
+	~AcoFF(){
         delete emitterTour;
         delete farmTour;
-        
-        free(eta);
-        free(fitness);
-        free(delta);
-        free(pheromone);
-
-        free(visited);
-        free(tabu);
-        free(p);
-        free(lengths);
-        free(bestTour);
     }
 };
