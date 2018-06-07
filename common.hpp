@@ -11,11 +11,21 @@
 using namespace std;
 
 enum ERROR {
-    EXIT_LOAD_TSP_FILE = 32,
+	EXIT_PARSE_INT = 32,
+	EXIT_PARSE_FLOAT,
+	EXIT_PARSE_STRING,
+    EXIT_LOAD_TSP_FILE,
     EXIT_EDGE_WEIGHT_TYPE,
     EXIT_EDGE_WEIGHT_FORMAT,
     EXIT_NODE_COORD_TYPE
 };
+
+#define fitness(a, b)	aco->fitness[a * aco->nCities + b]
+#define p(a, b)			aco->p[a * aco->nCities + b]
+#define visited(a, b)	aco->visited[a * aco->nCities + b]
+#define tabu(a, b)		aco->tabu[a * aco->nCities + b]
+
+#define edges(a, b)		tsp->edges[a * tsp->dimension + b]
 
 
 #define MAX_LEN 256
@@ -26,16 +36,17 @@ void intArg(int argc, char * argv[], int i, int * val) {
         return;
     }
     clog << "Error while parsing argv[" << i << "] int value" << endl; 
-    exit(-1);
+    exit(EXIT_PARSE_INT);
 }
 
-void floatArg(int argc, char * argv[], int i, float * val) {
+template <typename T>
+void floatArg(int argc, char * argv[], int i, T * val) {
     if (argc > i) {
         *val = atof(argv[i]);
         return;
     }
     clog << "Error while parsing argv[" << i << "] float value" << endl; 
-    exit(-1);
+    exit(EXIT_PARSE_FLOAT);
 }
 
 void stringArg(int argc, char * argv[], int i, char * val) {
@@ -44,7 +55,7 @@ void stringArg(int argc, char * argv[], int i, char * val) {
         return;
     }
     clog << "Error while parsing argv[" << i << "] string" << endl; 
-    exit(-1);
+    exit(EXIT_PARSE_STRING);
 }
 
 template <typename T> void printMatrix(string name, T * matrix, int rows, int cols) {
