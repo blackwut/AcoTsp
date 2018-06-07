@@ -13,14 +13,15 @@ private:
 	
 public:
 	int nAnts;
+	int nCities;
+	int elems;
 	T alpha;
 	T beta;
 	T q;
 	T rho;
 	int maxEpoch;
+	bool atomicDelta;
 	
-	int nCities;
-	int elems;
 	T * eta;
 	T * fitness;
 	T * delta;
@@ -30,26 +31,28 @@ public:
 	
 	int * visited;
 	int * tabu;
-	int * lengths;
+	T * lengths;
 	
 	T bestTourLen;
 	int * bestTour;
 	
-	ACO(int nAnts, int nCities, T alpha, T beta, T q, T rho, int maxEpoch) :
-	nAnts(nAnts), alpha(alpha), beta(beta), q(q), rho(rho), maxEpoch(maxEpoch), nCities(nCities), elems(nCities * nCities) {
+	ACO(int nAnts, int nCities, T alpha, T beta, T q, T rho, int maxEpoch, bool atomicDelta) :
+	nAnts(nAnts), nCities(nCities), elems(nCities * nCities), alpha(alpha), beta(beta), q(q), rho(rho), maxEpoch(maxEpoch), atomicDelta(atomicDelta) {
 		
-		eta = (T *) malloc(elems * sizeof(T));
-		fitness = (T *) malloc(elems * sizeof(T));
-		delta = (T *) malloc(elems * sizeof(T));
-		adelta = (atomic<T> *) malloc(elems * sizeof(atomic<T>));
-		if (adelta == NULL) cout << "porcodio" << endl;
-		pheromone = (T *) malloc(elems * sizeof(T));
+		eta = new T[elems];
+		fitness = new T[elems];
 		
-		visited = (int *) malloc(nAnts * nCities * sizeof(int));
-		tabu = (int *) malloc(nAnts * nCities * sizeof(int));
-		p = (T *) malloc(nAnts * nCities * sizeof(T));
-		lengths = (int *) malloc(nAnts * sizeof(int));
-		bestTour = (int *) malloc(nCities * sizeof(int));
+		if (atomicDelta)
+			adelta = new atomic<T>[elems];
+		else delta = new T[elems];
+		
+		pheromone = new T[elems];
+		
+		visited = new int[nAnts * nCities];
+		tabu = new int[nAnts * nCities];
+		p = new T[nAnts * nCities];
+		lengths = new T[nAnts];
+		bestTour = new int[nCities];
 	}
 	
 	void printBestTour() {
@@ -58,18 +61,21 @@ public:
 	}
 	
 	~ACO() {
-		free(eta);
-		free(fitness);
-		free(delta);
-		free(adelta);
-		free(pheromone);
-		free(p);
+		delete[] eta;
+		delete[] fitness;
 		
-		free(visited);
-		free(tabu);
-		free(lengths);
+		if (atomicDelta)
+			delete[] adelta;
+		else delete[] delta;
 		
-		free(bestTour);
+		delete[] pheromone;
+		delete[] p;
+		
+		delete[] visited;
+		delete[] tabu;
+		delete[] lengths;
+		
+		delete[] bestTour;
 	}
 };
 

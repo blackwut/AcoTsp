@@ -32,7 +32,7 @@ in >> val;           \
 else if ( buffer == tag )\
 in >> buffer >> val;
 
-#define edges(a, b) edges[a * dimension + b]
+#define _edges(a, b) edges[a * dimension + b]
 
 template <typename T>
 struct City {
@@ -57,15 +57,14 @@ private:
 		
 		if (TWOD_COORDS == nodeCoordType || nodeCoordType == "") {
 			
-			City<T> * cities = (City<T> *) malloc(dimension * sizeof(City<T>));
-			
+			City<T> * cities = new City<T>[dimension];
 			for (int i = 0; i < dimension; ++i) {
 				in >> cities[i].n;
 				in >> cities[i].x;
 				in >> cities[i].y;
 			}
 			
-			edges = (T *) malloc(dimension * dimension * sizeof(T));
+			edges = new T[dimension * dimension];
 			
 			for (int i = 0; i < dimension; ++i){
 				for (int j = 0; j < dimension; ++j) {
@@ -74,11 +73,11 @@ private:
 					T yd = cities[i].y - cities[j].y;
 					
 					if ( edgeWeightType == EUC_2D ) {
-						edges(i, j) = round( sqrt(xd * xd + yd * yd) );
+						_edges(i, j) = round( sqrt(xd * xd + yd * yd) );
 					} else if ( edgeWeightType == MAN_2D ) {
-						edges(i, j) = round( abs(xd) + abs(yd) );
+						_edges(i, j) = round( abs(xd) + abs(yd) );
 					} else if ( edgeWeightType == MAX_2D ) {
-						edges(i, j) = max ( round(abs(xd)), round(abs(yd)) );
+						_edges(i, j) = max ( round(abs(xd)), round(abs(yd)) );
 					} else {
 						clog << EDGE_WEIGHT_TYPE << ": " << edgeWeightType << " not supported!" << endl;
 						exit(EXIT_EDGE_WEIGHT_TYPE);
@@ -96,22 +95,22 @@ private:
 	
 	void readEdgesFromEdges(ifstream &in) {
 		
-		edges = (T *) malloc(dimension * dimension * sizeof(T));
+		edges = new T[dimension * dimension];
 		
 		if ( edgeWieghtFormat == FULL_MATRIX ) {
 			for (int i = 0; i < dimension; ++i){
 				for (int j = 0; j < dimension; ++j) {
-					in >> edges(i, j);
+					in >> _edges(i, j);
 				}
 			}
 		} else if ( edgeWieghtFormat == UPPER_ROW ) {
 			
 			//Reading upper triangular matrix without diagonal
 			for (int i = 0; i < dimension; ++i){
-				edges(i, i) = 0.0f;
+				_edges(i, i) = 0.0f;
 				for (int j = i + 1; j < dimension; ++j) {
-					in >> edges(i, j);
-					edges(j, i) = edges(i, j);
+					in >> _edges(i, j);
+					_edges(j, i) = _edges(i, j);
 				}
 			}
 			
@@ -175,7 +174,7 @@ public:
 				clog << "Illegal city in position: " << i + 1 << "!"<< endl;
 				return 0;
 			}
-			if (edges(from, to) <= 0) {
+			if (_edges(from, to) <= 0) {
 				clog << "Path impossibile: " << from << " -> " << to << endl;
 				return 0;
 			}
@@ -194,12 +193,12 @@ public:
 			
 			if ( from == -1 || to == -1 ) return -1;
 			
-			len += edges(from, to);
+			len += _edges(from, to);
 		}
 		
 		from = path[dimension - 1];
 		to = path[0];
-		len += edges(from, to);
+		len += _edges(from, to);
 		
 		return len;
 	}
