@@ -60,7 +60,7 @@ void stringArg(int argc, char * argv[], int i, char * val) {
 
 template <typename T> void printMatrix(string name, T * matrix, int rows, int cols) {
 
-    cout << "*** " << name << " ****" << endl;
+    cout << "**** " << name << " ****" << endl;
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
             cout << setw(3) << setprecision(3) << fixed << matrix[i * cols + j] << " ";
