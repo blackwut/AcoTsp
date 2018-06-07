@@ -6,8 +6,13 @@ tspArray=(
 	"bays29.tsp"
 	"berlin52.tsp"
 	"d198.tsp"
-	"d493.tsp"
-	"d657.tsp"
+	"a280.tsp"
+	"lin318.tsp"
+	"pcb442.tsp"
+	"rat783.tsp"
+	"pr1002.tsp"
+	"nrw1379.tsp"
+	"pr2392.tsp"
 )
 
 threadsArray=(
@@ -17,6 +22,7 @@ threadsArray=(
 	8
 	16
 	32
+	64
 )
 
 for problem in "${tspArray[@]}"
