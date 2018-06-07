@@ -62,6 +62,7 @@ int main(int argc, char * argv[]) {
 	}
 	
 #define LOG_SEP " "
+	clog << " *** " << LOG_SEP;
 	clog << tsp->getName() << LOG_SEP;
 	clog << nThreads << LOG_SEP;
 	clog << maxEpoch << LOG_SEP;
