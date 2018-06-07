@@ -11,7 +11,6 @@
 using namespace std;
 using namespace ff;
 
-
 struct Emitter: ff_node_t<int> {
 
     ff_loadbalancer * const loadBalancer;
@@ -24,8 +23,7 @@ struct Emitter: ff_node_t<int> {
         if (s == nullptr) {
             
             for (int i = 0; i < nAnts; ++i) {
-                int * x = (int *) malloc(sizeof(int));
-                *x = i;
+				int * x = new int(i);
                 ff_send_out(x);
             }
         
@@ -54,15 +52,14 @@ struct Worker: ff_node_t<int> {
 		distribution = new std::uniform_real_distribution<T>(0, 1);
 	}
 
-	T nextFloat() {
+	T nextRandom() {
 		return distribution->operator()(*generator);
 	}
 	
 	T atomic_addf(atomic<T> * f, T d){
 		T old = f->load(std::memory_order_consume);
 		T desired = old + d;
-		while (!f->compare_exchange_weak(old, desired,
-										 std::memory_order_release, std::memory_order_consume))
+		while (!f->compare_exchange_weak(old, desired, std::memory_order_release, std::memory_order_consume))
 		{
 			desired = old + d;
 		}
@@ -76,57 +73,62 @@ struct Worker: ff_node_t<int> {
         int id = *in;        
 
         for (int i = 0; i < aco->nCities; ++i) {
-            aco->visited[id * aco->nCities + i] = 1;
+			visited(id, i) = 1;
         }
 
-        int k = nextFloat() * aco->nCities;
-        aco->visited[id * aco->nCities +k] = 0;
-        aco->tabu[id * aco->nCities] = k;
+        int k = nextRandom() * aco->nCities;
+		visited(id, k) = 0;
+		tabu(id, 0) = k;
         
         for (int s = 1; s < aco->nCities; ++s) {
             T sum = 0;
 
             int i = k;
             for (int j = 0; j < aco->nCities; ++j) {
-                sum += aco->fitness[i * aco->nCities + j] * aco->visited[id * aco->nCities + j];
-                aco->p[id * aco->nCities + j] = sum;
+				sum += fitness(i, j) * visited(id, j);
+				p(id, j) = sum;
             }
 
-            T r = nextFloat() * sum;
+            T r = nextRandom() * sum;
             k = -1;
             for (int j = 0; j < aco->nCities; ++j) {
-                if ( k == -1 && aco->p[id * aco->nCities + j] > r) {
+				if ( k == -1 && p(id, j) > r) {
                     k = j;
                     break;
                 }
             }
 
-            aco->visited[id * aco->nCities + k] = 0;
-            aco->tabu[id * aco->nCities + s] = k;
+			if (k == -1) {
+				cout << "Huston we have a problem!" << endl;
+				k = aco->nCities - 1;
+			}
+			
+			visited(id, k) = 0;
+			tabu(id, s) = k;
         }
 
         T length = 0;
         int from;
         int to;
         for (int i = 0; i < aco->nCities - 1; ++i) {
-            from = aco->tabu[id * aco->nCities + i];
-            to = aco->tabu[id * aco->nCities + i + 1];
-            length += tsp->edges[from * aco->nCities + to];
+			from = tabu(id, i);
+			to = tabu(id, i + 1);
+			length += edges(from, to);
         }
-        from = aco->tabu[id * aco->nCities + aco->nCities - 1];
-        to = aco->tabu[id * aco->nCities];
-        length += tsp->edges[from * aco->nCities + to];
+		from = tabu(id, aco->nCities - 1);
+		to = tabu(id, 0);
+		length += edges(from, to);
 
-        aco->lengths[id] = (int)length;
+        aco->lengths[id] = length;
 
         T d = aco->q / length;
-        for (int j = 0; j < aco->nCities - 1; ++j) {
-            from = aco->tabu[id * aco->nCities + j];
-            to = aco->tabu[id * aco->nCities + j + 1];
+        for (int i = 0; i < aco->nCities - 1; ++i) {
+			from = tabu(id, i);
+			to = tabu(id, i + 1);
             atomic_addf( (aco->adelta + (from * aco->nCities + to)), d );
         }
-        from = aco->tabu[k * aco->nCities + aco->nCities - 1];
-        to = aco->tabu[k * aco->nCities];
+		from = tabu(id, aco->nCities - 1);
+		to = tabu(id, 0);
         atomic_addf( (aco->adelta + (from * aco->nCities + to)), d );
 
         return in;
@@ -172,10 +174,15 @@ class AcoFF {
     }
 
     void calcTour() {
-        if (farmTour->run_and_wait_end()<0) {
-            error("running farm\n");
+        if (farmTour->run_then_freeze() < 0) {
+            error("Running farm\n");
             exit(-1);
         }
+
+		if (farmTour->wait_freezing() < 0) {
+			error("Wait freezing farm\n");
+			exit(-1);
+		}
     }
 
     void calcBestTour() {

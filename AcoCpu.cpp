@@ -6,7 +6,6 @@
 
 using namespace std;
 
-
 template <typename T>
 class AcoCpu {
 	
@@ -18,13 +17,13 @@ private:
 	int epoch;
 	unsigned int seed = 123;
 	
-	T randFloat() {
+	T nextRandom() {
 		static std::mt19937 generator(seed);
 		static std::uniform_real_distribution<T> distribution(0.0f, 1.0f);
 		return distribution(generator);
 	}
 	
-	void initPheromone(float initialPheromone) {
+	void initPheromone(T initialPheromone) {
 		for (int i = 0; i < aco->elems; ++i) {
 			aco->pheromone[i] = initialPheromone;
 		}
@@ -44,55 +43,56 @@ private:
 	
 	void calcTour() {
 		
-		for (int i = 0; i < aco->nAnts * tsp->dimension; ++i) {
+		for (int i = 0; i < aco->nAnts * aco->nCities; ++i) {
 			aco->visited[i] = 1;
 		}
 		
 		for (int id = 0; id < aco->nAnts; ++id) {
 			
-			int k = randFloat() * aco->nAnts;
-			aco->visited[id * tsp->dimension + k] = 0;
-			aco->tabu[id * tsp->dimension] = k;
+			int k = nextRandom() * aco->nAnts;
+			visited(id, k) = 0;
+			tabu(id, 0) = k;
 			
-			for (int s = 1; s < tsp->dimension; ++s) {
-				float sum = 0.0f;
+			for (int s = 1; s < aco->nCities; ++s) {
+				T sum = 0.0f;
 				
 				int i = k;
-				for (int j = 0; j < tsp->dimension; ++j) {
-					sum += aco->fitness[i * tsp->dimension + j] * aco->visited[id * tsp->dimension + j];
-					aco->p[id * tsp->dimension + j] = sum;
+				for (int j = 0; j < aco->nCities; ++j) {
+					sum += fitness(i, j) * visited(id, j);
+					p(id, j) = sum;
 				}
 				
-				float r = randFloat() * sum;
+				T r = nextRandom() * sum;
 				k = -1;
-				for (int j = 0; j < tsp->dimension; ++j) {
-					if ( k == -1 && aco->p[id * tsp->dimension +j] > r ) {
+				for (int j = 0; j < aco->nCities; ++j) {
+					if ( k == -1 && p(id, j) > r) {
 						k = j;
 						break;
 					}
 				}
 				
 				if ( k == -1 ) {
-					k = tsp->dimension - 1;
+					cout << "Huston we have a problem!" << endl;
+					k = aco->nCities - 1;
 				}
 				
-				aco->visited[id * tsp->dimension + k] = 0;
-				aco->tabu[id * tsp->dimension + s] = k;
+				visited(id, k) = 0;
+				tabu(id, s) = k;
 			}
 			
-			float length = 0.0f;
+			T length = 0.0f;
 			int from;
 			int to;
 			for (int i = 0; i < tsp->dimension - 1; ++i) {
-				from = aco->tabu[id * tsp->dimension + i];
-				to = aco->tabu[id * tsp->dimension + i + 1];
-				length += tsp->edges[from * tsp->dimension + to];
+				from = tabu(id, i);
+				to = tabu(id, i + 1);
+				length += edges(from, to);
 			}
-			from = aco->tabu[id * tsp->dimension + tsp->dimension - 1];
-			to = aco->tabu[id * tsp->dimension];
-			length += tsp->edges[from * tsp->dimension + to];
+			from = tabu(id, aco->nCities - 1);
+			to = tabu(id, 0);
+			length += edges(from, to);
 			
-			aco->lengths[id] = (int)length;
+			aco->lengths[id] = length;
 		}
 	}
 	
@@ -106,7 +106,7 @@ private:
 		for (int i = 0; i < aco->nAnts; ++i) {
 			if (aco->lengths[i] == aco->bestTourLen) {
 				for (int j = 0; j < tsp->dimension; ++j) {
-					aco->bestTour[j] = aco->tabu[i * tsp->dimension + j];
+					aco->bestTour[j] = tabu(i, j);
 				}
 				break;
 			}
@@ -124,12 +124,12 @@ private:
 		int to;
 		for (int i = 0; i < aco->nAnts; ++i) {
 			for (int j = 0; j < tsp->dimension - 1; ++j) {
-				from = aco->tabu[i * tsp->dimension + j];
-				to = aco->tabu[i * tsp->dimension + j + 1];
+				from = tabu(i , j);
+				to = tabu(i, j + 1);
 				aco->delta[from * tsp->dimension + to] += aco->q / aco->lengths[i];
 			}
-			from = aco->tabu[i * tsp->dimension + tsp->dimension - 1];
-			to = aco->tabu[i * tsp->dimension];
+			from = tabu(i, aco->nCities - 1);
+			to = tabu(i, 0);
 			aco->delta[from * tsp->dimension + to] += aco->q / aco->lengths[i];
 		}
 	}
@@ -164,7 +164,7 @@ public:
 		aco->bestTourLen = INT_MAX;
 		epoch = 0;
 		
-		float initialPheromone = 1.0f / tsp->dimension;
+		T initialPheromone = 1.0f / tsp->dimension;
 		initPheromone(initialPheromone);
 		initEta();
 		
