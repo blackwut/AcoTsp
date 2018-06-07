@@ -6,13 +6,17 @@
 
 using namespace std;
 
+#ifndef D_TYPE
+#define D_TYPE double
+#endif
+
 int main(int argc, char * argv[]) {
 
-    char * path = (char *) malloc(MAX_LEN);
-    float alpha = 4.0f;
-    float beta = 2.0f;
-    float q = 55.0f;
-    float rho = 0.8f;
+	char * path = new char[MAX_LEN];
+    D_TYPE alpha = 4.0f;
+    D_TYPE beta = 2.0f;
+    D_TYPE q = 55.0f;
+    D_TYPE rho = 0.8f;
     int maxEpoch = 30;
     int nThreads = 8;
 
@@ -32,13 +36,13 @@ int main(int argc, char * argv[]) {
     intArg(argc, argv, args++, &maxEpoch);
     intArg(argc, argv, args++, &nThreads);
 
-	TSP<float> * tsp = new TSP<float>::TSP(path);
-	ACO<float> * aco = new ACO<float>::ACO(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch);
+	TSP<D_TYPE> * tsp = new TSP<D_TYPE>(path);
+	ACO<D_TYPE> * aco = new ACO<D_TYPE>(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch, nThreads > 1);
 
     if (nThreads <= 1) {
 		
         cout << "***** ACO CPU *****" << endl;
-        AcoCpu<float> acocpu(aco, tsp);
+        AcoCpu<D_TYPE> acocpu(aco, tsp);
 
         startTimer();
         acocpu.solve();
@@ -47,7 +51,7 @@ int main(int argc, char * argv[]) {
     } else {
 		
         cout << "***** ACO FastFlow *****" << endl;
-		AcoFF<float> acoff(aco, tsp, nThreads);
+		AcoFF<D_TYPE> acoff(aco, tsp, nThreads);
         startTimer();
         acoff.solve();
         stopAndPrintTimer();
@@ -67,9 +71,9 @@ int main(int argc, char * argv[]) {
 	clog << (tsp->checkPath(aco->bestTour) == 1 ? "Y" : "N") << LOG_SEP;
 	clog << endl;
 	
-    free(path);
-    free(tsp);
-	free(aco);
+    delete[] path;
+	delete tsp;
+	delete aco;
 
     return 0;
 }
