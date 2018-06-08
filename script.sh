@@ -12,7 +12,7 @@ tspArray=(
 	"rat783.tsp"
 	"pr1002.tsp"
 	"nrw1379.tsp"
-	"pr2392.tsp"
+#"pr2392.tsp"
 )
 
 threadsArray=(
@@ -30,8 +30,11 @@ do
 	echo $problem;
 	for i in "${threadsArray[@]}"
 	do
+		for j in `seq 1 10`;
+		do
 #		./acocpu file.tsp alpha beta   q rho maxEpoch nThreads
 		./acocpu $tspBase$problem   0.6  0.4 100 0.6       50       $i
+		done
 	done
 done
 
