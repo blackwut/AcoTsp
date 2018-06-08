@@ -7,7 +7,7 @@
 using namespace std;
 
 #ifndef D_TYPE
-#define D_TYPE double
+#define D_TYPE float
 #endif
 
 int main(int argc, char * argv[]) {
