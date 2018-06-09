@@ -60,6 +60,69 @@ void calculateFitness(float * fitness, float * pheromone, float * eta, float alp
 __global__
 void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateXORWOW_t * state)
 {
+	int antIdx = blockIdx.x;
+	int tid = threadIdx.x;
+	int idx = ((blockIdx.x * blockDim.x * (width >> 5)) + threadIdx.x);
+	
+	if ( antIdx >= rows ) return; //It is not required because the kernel will be launched with only "rows" blocks
+	
+	float p[1024];
+	int visited[1024];
+	float r;
+	float sum;
+	int i;
+	int j;
+	int k;
+	
+	for (i = 0; i < cols >> 5; ++i) {
+		visited[i] = 1;
+	}
+	
+	if (tid == 0) {
+		k = cols * randXOR(state + idx);
+		visited[k] = 0;
+		tabu[idx * cols] = k;
+	}
+	
+	for (int s = 1; s < cols; ++s) {
+		
+		//shuffle_sync of r
+		//shuffle_sync of the last value of sum
+		
+		//reduce of 32 elements
+		//#pragma unroll
+		//for (int i = 1; i <= 32; i *= 2) {
+		//	int n = __shfl_up_sync(0xffffffff, value, i, 32);
+		//	if (lane_id >= i) value += n;
+		//}
+		
+		//ballot?? to select the right thread that will write the next city
+		
+		sum = 0.0f;
+		i = k;
+		for (j = 0; j < cols; ++j) {
+			sum += fitness[i * cols + j] * visited[j];
+			p[j] = sum;
+		}
+		
+		r = randXOR(state + idx) * sum;
+		k = -1;
+		for (j = 0; j < cols; ++j) {
+			if ( k == -1 && p[j] > r ) {
+				k = j;
+			}
+			//k += (k == -1) * (p[j] > r) * j;
+		}
+		//k += 1;
+		visited[k] = 0;
+		tabu[idx * cols + s] = k;
+	}
+}
+
+/*
+__global__
+void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateXORWOW_t * state)
+{
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if ( idx >= rows ) return;
@@ -101,7 +164,7 @@ void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateX
         visited[k] = 0;
         tabu[idx * cols + s] = k;
     }
-}
+}*/
 
 __global__
 void calculateTourLen(int * tabu, float * distance, int * tourLen, int rows, int cols)
