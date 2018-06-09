@@ -159,24 +159,24 @@ class AcoFF {
 	
 	int epoch;
 	
-	void initialize(T initialPheromone) {
-		pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
-			aco->pheromone[i] = initialPheromone;
-			aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
-		});
-	}
+//	void initialize(T initialPheromone) {
+//		pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
+//			aco->pheromone[i] = initialPheromone;
+//			aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
+//		});
+//	}
 
-//    void initPheromone(T initialPheromone) {
-//        pfr.parallel_for(0L, aco->elems, [&](const long i) {
-//            aco->pheromone[i] = initialPheromone;
-//        });
-//    }
-//
-//    void initEta() {
-//        pfr.parallel_for(0L, aco->elems, [&](const long i) {
-//            aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
-//        });
-//    }
+    void initPheromone(T initialPheromone) {
+        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+            aco->pheromone[i] = initialPheromone;
+        });
+    }
+
+    void initEta() {
+        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+            aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
+        });
+    }
 
     void calcFitness() {
         pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
@@ -264,9 +264,9 @@ class AcoFF {
 		epoch = 0;
 		
 		T initialPheromone = 1.0f / tsp->dimension;
-		initialize(initialPheromone);
-//		initPheromone(initialPheromone);
-//		initEta();
+//		initialize(initialPheromone);
+		initPheromone(initialPheromone);
+		initEta();
 		
 		do {
 			nextIteration();
