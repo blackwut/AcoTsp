@@ -167,13 +167,13 @@ class AcoFF {
 //	}
 
     void initPheromone(T initialPheromone) {
-        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+        pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
             aco->pheromone[i] = initialPheromone;
         });
     }
 
     void initEta() {
-        pfr.parallel_for(0L, aco->elems, [&](const long i) {
+        pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
             aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
         });
     }
