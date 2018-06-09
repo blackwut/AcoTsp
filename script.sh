@@ -1,4 +1,6 @@
 #!/bin/bash
+#To lunch script in background and exiting from ssh to avoid termination
+#nohup ./script &> log.txt &
 
 tspBase="tsp/"
 
@@ -12,7 +14,7 @@ tspArray=(
 	"rat783.tsp"
 	"pr1002.tsp"
 	"nrw1379.tsp"
-#"pr2392.tsp"
+#	"pr2392.tsp"
 )
 
 threadsArray=(
