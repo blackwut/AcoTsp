@@ -76,7 +76,7 @@ struct Worker: ff_node_t<int> {
 			visited(id, i) = 1;
         }
 
-		T length = 0;
+//		T length = 0;
         int k = nextRandom() * aco->nCities;
 		visited(id, k) = 0;
 		tabu(id, 0) = k;
@@ -106,21 +106,22 @@ struct Worker: ff_node_t<int> {
 			
 			visited(id, k) = 0;
 			tabu(id, s) = k;
-			length += edges(i, k);
+//			length += edges(i, k);
         }
 		
-		length += edges(k, 0);
+//		length += edges(k, 0);
 		
         int from;
         int to;
-//        for (int i = 0; i < aco->nCities - 1; ++i) {
-//			from = tabu(id, i);
-//			to = tabu(id, i + 1);
-//			length += edges(from, to);
-//        }
-//		from = tabu(id, aco->nCities - 1);
-//		to = tabu(id, 0);
-//		length += edges(from, to);
+		T length = 0;
+        for (int i = 0; i < aco->nCities - 1; ++i) {
+			from = tabu(id, i);
+			to = tabu(id, i + 1);
+			length += edges(from, to);
+        }
+		from = tabu(id, aco->nCities - 1);
+		to = tabu(id, 0);
+		length += edges(from, to);
 
         aco->lengths[id] = length;
 
