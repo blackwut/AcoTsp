@@ -5,7 +5,7 @@ SLOG=$1
 DLOG=$2
 
 grep " \*\*\* " $SLOG | wc -l | xargs > $DLOG;
-grep " \*\*\* " $SLOG | awk '{print $2,$3,$5,$6,$7,$8}' >> $DLOG
+grep " \*\*\* " $SLOG | awk '{print $2,$3,$4,$6,$7,$8,$9}' >> $DLOG
 
 
 g++ stats.cpp -o stats

@@ -38,6 +38,7 @@ int main(int argc, char * argv[]) {
 	if (argc >= 7) intArg(argc, argv, args++, &mapWorkers);
 	if (argc >= 7) intArg(argc, argv, args++, &farmWorkers);
 	
+	cout << mapWorkers << " " << farmWorkers << endl;
 	int parallelCondition = mapWorkers > 0 && farmWorkers > 0;
 	
 	TSP<D_TYPE> * tsp = new TSP<D_TYPE>(path);
@@ -73,7 +74,7 @@ int main(int argc, char * argv[]) {
 	clog << getTimerMS() << LOG_SEP;
 	clog << getTimerUS() << LOG_SEP;
 	clog << aco->bestTourLen << LOG_SEP;
-	clog << (tsp->checkPath(aco->bestTour) == 1 ? "Y" : "N") << LOG_SEP;
+	clog << (tsp->checkPath(aco->bestTour) == 1 ? "Y" : "N");
 	clog << endl;
 	
     delete[] path;

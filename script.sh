@@ -2,6 +2,8 @@
 #To lunch script in background and exiting from ssh to avoid termination
 #nohup ./script &> log.txt &
 
+make acocpu
+
 tspBase="tsp/"
 
 tspArray=(
