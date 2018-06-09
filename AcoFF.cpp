@@ -106,6 +106,7 @@ struct Worker: ff_node_t<int> {
 			
 			visited(id, k) = 0;
 			tabu(id, s) = k;
+//Calculating length in this way decreese the performance about 40% in PHI server
 //			length += edges(i, k);
         }
 		
