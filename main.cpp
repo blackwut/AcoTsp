@@ -35,8 +35,8 @@ int main(int argc, char * argv[]) {
     floatArg(argc, argv, args++, &q);
     floatArg(argc, argv, args++, &rho);
 	intArg(argc, argv, args++, &maxEpoch);
-	if (argc >= 8) intArg(argc, argv, args++, &mapWorkers);
-	if (argc >= 8) intArg(argc, argv, args++, &farmWorkers);
+	if (argc >= 7) intArg(argc, argv, args++, &mapWorkers);
+	if (argc >= 7) intArg(argc, argv, args++, &farmWorkers);
 	
 	int parallelCondition = mapWorkers > 0 && farmWorkers > 0;
 	
