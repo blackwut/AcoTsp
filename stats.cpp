@@ -8,7 +8,8 @@ using namespace std;
 
 struct Row {
 	string name;
-	long nThreads;
+	long mapThreads;
+	long farmThreads;
 	long ms;
 	long ns;
 	double length;
@@ -17,10 +18,13 @@ struct Row {
 
 int nThreads[] = {1, 2, 4, 8, 16, 32, 64};
 
+#define THREAD_TYPE_MAP 0
+#define THREAD_TYPE_FARM 1
+
 //rows = start pointer
 //n = number of test with different nThread
 //m = number of test with the same nThread
-void printStatFor(Row * rows, int n, int m, ofstream &ff, ofstream &ideal) {
+void printStatFor(Row * rows, int n, int m, ofstream &ff, ofstream &ideal, int threadType) {
 	
 	double avgFirst = 0;
 	for (int i = 0; i < n; ++i) {
@@ -41,8 +45,13 @@ void printStatFor(Row * rows, int n, int m, ofstream &ff, ofstream &ideal) {
 		
 		if ( i == 0 ) avgFirst = avg;
 		
-		ff << rows[i * m].nThreads << " " << avg << endl;
-		ideal << nThreads[i] << " " <<  avgFirst / nThreads[i] << endl;
+		if (threadType == THREAD_TYPE_MAP) {
+			ff << rows[i * m].mapThreads << " " << avg << endl;
+			ideal << nThreads[i] << " " <<  avgFirst / nThreads[i] << endl;
+		} else {
+			ff << rows[i * m].farmThreads << " " << avg << endl;
+			ideal << nThreads[i] << " " <<  avgFirst / nThreads[i] << endl;
+		}
 	}
 }
 
@@ -69,7 +78,8 @@ int main(int argc, char * argv[]) {
 	
 	for (int i = 0; i < n; ++i) {
 		in >> rows[i].name;
-		in >> rows[i].nThreads;
+		in >> rows[i].mapThreads;
+		in >> rows[i].farmThreads;
 		in >> rows[i].ms;
 		in >> rows[i].ns;
 		in >> rows[i].length;
@@ -82,7 +92,7 @@ int main(int argc, char * argv[]) {
 		ofstream ff("/Volumes/RamDisk/" + rows[i].name + "_ff.txt");
 		ofstream ideal("/Volumes/RamDisk/" + rows[i].name + "_ideal.txt");
 
-		printStatFor(rows + i, nThread, tests, ff, ideal);
+		printStatFor(rows + i, nThread, tests, ff, ideal, THREAD_TYPE_MAP);
 		
 		ff.close();
 		ideal.close();

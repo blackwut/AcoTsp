@@ -221,12 +221,14 @@ class AcoFF {
 
     public:
 
-    AcoFF(ACO<T> * aco, TSP<T> * tsp, int nThreads)
+    AcoFF(ACO<T> * aco, TSP<T> * tsp, int mapWorkers, int farmWorkers)
     : aco(aco), tsp(tsp)
 	{
+		pfr = new ParallelForReduce<T>(mapWorkers);
+
         farmTour = new ff_Farm<>( [&]() {
             vector< unique_ptr<ff_node> > workers;
-            for(int i = 0; i < nThreads; ++i)
+            for(int i = 0; i < farmWorkers; ++i)
                 workers.push_back( make_unique< Worker<T> >(aco, tsp) );
             return workers;
         }());
@@ -235,8 +237,6 @@ class AcoFF {
         farmTour->add_emitter(*emitterTour);
         farmTour->remove_collector();
         farmTour->wrap_around();
-		
-		pfr = new ParallelForReduce<T>(nThreads);
 		
 		epoch = 0;
     }
@@ -265,8 +265,8 @@ class AcoFF {
     }
 
 	~AcoFF(){
+		delete pfr;
         delete emitterTour;
         delete farmTour;
-		delete pfr;
     }
 };

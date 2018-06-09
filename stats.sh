@@ -10,4 +10,4 @@ grep " \*\*\* " $SLOG | awk '{print $2,$3,$5,$6,$7,$8}' >> $DLOG
 
 g++ stats.cpp -o stats
 #./stats filename tests_same_nThread number_of_different_nThread
-./stats $DLOG 10 7
+./stats $DLOG 10 6

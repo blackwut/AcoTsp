@@ -18,10 +18,11 @@ int main(int argc, char * argv[]) {
     D_TYPE q = 55.0f;
     D_TYPE rho = 0.8f;
     int maxEpoch = 30;
-    int nThreads = 8;
+    int mapWorkers = 0;
+	int farmWorkers = 0;
 
-    if (argc < 8) {
-		cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpoch nThreads" << endl;
+    if (argc < 7) {
+		cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpoch [mapWorkers farmWorkers]" << endl;
         exit(-1);
     }
 
@@ -33,14 +34,16 @@ int main(int argc, char * argv[]) {
     floatArg(argc, argv, args++, &beta);
     floatArg(argc, argv, args++, &q);
     floatArg(argc, argv, args++, &rho);
-    intArg(argc, argv, args++, &maxEpoch);
-    intArg(argc, argv, args++, &nThreads);
-
+	intArg(argc, argv, args++, &maxEpoch);
+	if (argc >= 8) intArg(argc, argv, args++, &mapWorkers);
+	if (argc >= 8) intArg(argc, argv, args++, &farmWorkers);
+	
+	int parallelCondition = mapWorkers > 0 && farmWorkers > 0;
+	
 	TSP<D_TYPE> * tsp = new TSP<D_TYPE>(path);
-	ACO<D_TYPE> * aco = new ACO<D_TYPE>(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch, nThreads > 1);
+	ACO<D_TYPE> * aco = new ACO<D_TYPE>(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch, parallelCondition);
 
-    if (nThreads <= 1) {
-		
+    if (!parallelCondition) {
         cout << "***** ACO CPU *****" << endl;
         AcoCpu<D_TYPE> acocpu(aco, tsp);
 
@@ -51,7 +54,7 @@ int main(int argc, char * argv[]) {
     } else {
 		
         cout << "***** ACO FastFlow *****" << endl;
-		AcoFF<D_TYPE> acoff(aco, tsp, nThreads);
+		AcoFF<D_TYPE> acoff(aco, tsp, mapWorkers, farmWorkers);
         startTimer();
         acoff.solve();
         stopAndPrintTimer();
@@ -64,7 +67,8 @@ int main(int argc, char * argv[]) {
 #define LOG_SEP " "
 	clog << " *** " << LOG_SEP;
 	clog << tsp->getName() << LOG_SEP;
-	clog << nThreads << LOG_SEP;
+	clog << mapWorkers << LOG_SEP;
+	clog << farmWorkers << LOG_SEP;
 	clog << maxEpoch << LOG_SEP;
 	clog << getTimerMS() << LOG_SEP;
 	clog << getTimerUS() << LOG_SEP;
