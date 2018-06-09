@@ -8,8 +8,6 @@
 #include "ACO.cpp"
 #include "TSP.cpp"
 
-#define PFR_GRAIN 1024
-
 using namespace std;
 using namespace ff;
 
@@ -158,28 +156,21 @@ class AcoFF {
 	ParallelForReduce<T> * pfr;
 	
 	int epoch;
-	
-//	void initialize(T initialPheromone) {
-//		pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
-//			aco->pheromone[i] = initialPheromone;
-//			aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
-//		});
-//	}
 
     void initPheromone(T initialPheromone) {
-        pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
+        pfr->parallel_for(0L, aco->elems, [&](const long i) {
             aco->pheromone[i] = initialPheromone;
         });
     }
 
     void initEta() {
-        pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
+        pfr->parallel_for(0L, aco->elems, [&](const long i) {
             aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
         });
     }
 
     void calcFitness() {
-        pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
+        pfr->parallel_for(0L, aco->elems, [&](const long i) {
             aco->fitness[i] = pow(aco->pheromone[i], aco->alpha) * pow(aco->eta[i], aco->beta);
         });
     }
@@ -201,7 +192,6 @@ class AcoFF {
 		
 		pfr->parallel_reduce(aco->bestTourLen, maxT,
 							0L, aco->nAnts,
-							 1, PFR_GRAIN,
 							[&](const long i, T &min) { min = (min > aco->lengths[i] ? aco->lengths[i] : min); },
 							[](T &v, const T &elem) { v = (v > elem ? elem : v); });
 
@@ -216,13 +206,13 @@ class AcoFF {
     }
 
     void clearDelta() {
-        pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
+        pfr->parallel_for(0L, aco->elems, [&](const long i) {
 			aco->adelta[i] = 0;
 		});
     }
 
     void updatePheromone() {
-        pfr->parallel_for(0L, aco->elems, 1, PFR_GRAIN, [&](const long i) {
+        pfr->parallel_for(0L, aco->elems, [&](const long i) {
             aco->pheromone[i] = aco->pheromone[i] * (1 - aco->rho) + aco->adelta[i];
         });
     }
@@ -264,7 +254,6 @@ class AcoFF {
 		epoch = 0;
 		
 		T initialPheromone = 1.0f / tsp->dimension;
-//		initialize(initialPheromone);
 		initPheromone(initialPheromone);
 		initEta();
 		
