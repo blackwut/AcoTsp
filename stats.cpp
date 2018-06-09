@@ -15,11 +15,14 @@ struct Row {
 	string correct;
 };
 
+int nThreads[] = {1, 2, 4, 8, 16, 32, 64};
+
 //rows = start pointer
 //n = number of test with different nThread
 //m = number of test with the same nThread
-void printStatFor(Row * rows, int n, int m, ofstream &out) {
+void printStatFor(Row * rows, int n, int m, ofstream &ff, ofstream &ideal) {
 	
+	double avgFirst = 0;
 	for (int i = 0; i < n; ++i) {
 		double sum = 0;
 		double max = __DBL_MIN__;
@@ -36,7 +39,10 @@ void printStatFor(Row * rows, int n, int m, ofstream &out) {
 		sum = sum - max - min;
 		avg = sum / (m - 2);
 		
-		out << rows[i * m].nThreads << " " << avg << endl;
+		if ( i == 0 ) avgFirst = avg;
+		
+		ff << rows[i * m].nThreads << " " << avg << endl;
+		ideal << nThreads[i] << " " <<  avgFirst / nThreads[i] << endl;
 	}
 }
 
@@ -50,6 +56,7 @@ int main(int argc, char * argv[]) {
 	int n = 0;
 	int tests = atoi(argv[2]);
 	int nThread = atoi(argv[3]);
+	
 	
 	ifstream in(argv[1]);
 	if ( !in ) {
@@ -72,9 +79,13 @@ int main(int argc, char * argv[]) {
 	in.close();
 	
 	for (int i = 0; i < n; i += tests * nThread) {
-		ofstream r("/Volumes/RamDisk/" + rows[i].name + ".txt");
-		printStatFor(rows + i, nThread, tests, r);
-		r.close();
+		ofstream ff("/Volumes/RamDisk/" + rows[i].name + "_ff.txt");
+		ofstream ideal("/Volumes/RamDisk/" + rows[i].name + "_ideal.txt");
+
+		printStatFor(rows + i, nThread, tests, ff, ideal);
+		
+		ff.close();
+		ideal.close();
 	}
 	
 //	for(int i = 0; i < n; ++i) {
