@@ -38,7 +38,6 @@ int main(int argc, char * argv[]) {
 	if (argc >= 7) intArg(argc, argv, args++, &mapWorkers);
 	if (argc >= 7) intArg(argc, argv, args++, &farmWorkers);
 	
-	cout << mapWorkers << " " << farmWorkers << endl;
 	int parallelCondition = mapWorkers > 0 && farmWorkers > 0;
 	
 	TSP<D_TYPE> * tsp = new TSP<D_TYPE>(path);
