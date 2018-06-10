@@ -93,14 +93,14 @@ struct Worker: ff_node_t<int> {
             T r = nextRandom() * sum;
             k = -1;
             for (int j = 0; j < aco->nCities; ++j) {
-				if ( k == -1 && p(id, j) > r) {
+				if ( k == -1 && p(id, j) >= r) {
                     k = j;
                     break;
                 }
             }
 
 			if (k == -1) {
-				cout << "Huston we have a problem!" << endl;
+				cout << "Huston we have a problem! sum = " << sum << " random =" << r << endl;
 				k = aco->nCities - 1;
 			}
 			

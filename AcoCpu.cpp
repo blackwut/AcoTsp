@@ -65,7 +65,7 @@ private:
 				T r = nextRandom() * sum;
 				k = -1;
 				for (int j = 0; j < aco->nCities; ++j) {
-					if ( k == -1 && p(id, j) > r) {
+					if ( k == -1 && p(id, j) >= r) {
 						k = j;
 						break;
 					}
