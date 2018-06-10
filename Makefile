@@ -4,7 +4,7 @@ CXX_FLAGS	= -O3 -g -std=c++14 -pedantic -Wall -Waligned-new=none -I ~/Projects/f
 LD_FLAGS	= -pthread
 
 OBJECTS_CPU = main.cpp ACO.cpp TSP.cpp AcoCpu.cpp AcoFF.cpp common.hpp
-#OBJECTS_GPU = GPUAco.cu common.hpp
+OBJECTS_GPU = GPUAco.cu common.hpp
 
 acocpu: $(OBJECTS_CPU)
 	$(CXX) $(CXX_FLAGS) $< -o $@ $(LD_FLAGS)
@@ -13,11 +13,11 @@ acocpu7: $(OBJECTS_CPU)
 	$(CPP7) $(CXX_FLAGS) $< -o $@ $(LD_FLAGS)
 
 
-#acogpu: $(OBJECTS_GPU) 
-#	nvcc -O3 -g -lineinfo $< -o $@
+acogpu: $(OBJECTS_GPU)
+	nvcc -O3 -g -lineinfo $< -o $@
 
 acocpu_san: $(OBJECTS_CPU)
 	$(CXX) $(CXX_FLAGS) -fsanitize=thread $< -o $@ $(LD_FLAGS)
 
 clean:	
-	rm -f acocpu #acogpu
+	rm -f acocpu acogpu

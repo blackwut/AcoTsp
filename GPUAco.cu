@@ -7,7 +7,8 @@
 #include <curand_kernel.h>
 
 #include "common.hpp"
-#include "TSPReader.cpp"
+#include "ACO.cpp"
+#include "TSP.cpp"
 
 
 __global__ 
@@ -57,6 +58,7 @@ void calculateFitness(float * fitness, float * pheromone, float * eta, float alp
     fitness[id] = __powf(pheromone[id], alpha) * __powf(eta[id], beta);
 }
 
+/*
 __global__
 void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateXORWOW_t * state)
 {
@@ -117,9 +119,9 @@ void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateX
 		visited[k] = 0;
 		tabu[idx * cols + s] = k;
 	}
-}
+}*/
 
-/*
+
 __global__
 void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateXORWOW_t * state)
 {
@@ -164,7 +166,7 @@ void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateX
         visited[k] = 0;
         tabu[idx * cols + s] = k;
     }
-}*/
+}
 
 __global__
 void calculateTourLen(int * tabu, float * distance, int * tourLen, int rows, int cols)
@@ -250,31 +252,42 @@ int roundWithBlockSize(int numberOfElements, int blockSize)
     return numberOfBlocks(numberOfElements, blockSize) * blockSize; 
 }
 
+#ifndef D_TYPE
+#define D_TYPE float
+#endif
+
+
 int main(int argc, char * argv[]) {
 
-    char * path = (char *) malloc(MAX_LEN);
-    float alpha = 4.0f;
-    float beta = 2.0f;
-    float q = 55.0f;
-    float rho = 0.8f;
-    int maxEpochs = 30;
-
+	char * path = new char[MAX_LEN];
+	D_TYPE alpha = 4.0f;
+	D_TYPE beta = 2.0f;
+	D_TYPE q = 55.0f;
+	D_TYPE rho = 0.8f;
+	int maxEpoch = 30;
+	
+	if (argc < 7) {
+		cout << "Usage: ./acogpu file.tsp alpha beta q rho maxEpoch" << endl;
+		exit(-1);
+	}
+	
     int seed = time(0);//123;
     
-    argc--;
-    argv++;
-    int args = 0;
-    stringArg(argc, argv, args++, path);
-    floatArg(argc, argv, args++, &alpha);
-    floatArg(argc, argv, args++, &beta);
-    floatArg(argc, argv, args++, &q);
-    floatArg(argc, argv, args++, &rho);
-    intArg(argc, argv, args++, &maxEpochs);
+	argc--;
+	argv++;
+	int args = 0;
+	stringArg(argc, argv, args++, path);
+	floatArg(argc, argv, args++, &alpha);
+	floatArg(argc, argv, args++, &beta);
+	floatArg(argc, argv, args++, &q);
+	floatArg(argc, argv, args++, &rho);
+	intArg(argc, argv, args++, &maxEpoch);
 
-    TSP * tsp = getTPSFromFile(path);
+	TSP<D_TYPE> * tsp = new TSP<D_TYPE>(path);
+	ACO<D_TYPE> * aco = new ACO<D_TYPE>(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch, 0);
 
-    int nAnts = tsp->numberOfCities;
-    int nCities = tsp->numberOfCities;
+    int nAnts = aco->nAnts;
+    int nCities = tsp->dimension;
     float valPheromone = 1.0f / nCities;
 
     curandStateXORWOW_t * state;
@@ -307,7 +320,7 @@ int main(int argc, char * argv[]) {
 
     for (int i = 0; i < nCities; ++i) {
         for (int j = 0; j < nCities; ++j) {
-            distance[i * nCities + j] = tsp->distance[i * nCities +j];
+            distance[i * nCities + j] = tsp->edges[i * nCities +j];
         }
     }
 
@@ -329,19 +342,19 @@ int main(int argc, char * argv[]) {
         claculateTour<<<gridAntSmall, dimBlockSmall>>>(tabu, fitness, nAnts, nCities, state);
         calculateTourLen<<<gridAnt1D, dimBlock1D>>>(tabu, distance, tourLen, nAnts, nCities);
         
-        updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1)== maxEpochs));
+        updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1) == maxEpoch));
         updateDelta<<<gridAnt1D, dimBlock1D>>>(delta, tabu, tourLen, nAnts, nCities, q);
         updatePheromone<<<gridMatrix2D, dimBlock2D>>>(pheromone, delta, nCities, nCities, rho);
 
-    } while (++epoch < maxEpochs);
+    } while (++epoch < maxEpoch);
 
     cudaDeviceSynchronize();
 
     stopAndPrintTimer();
 
-    cout << (checkPathPossible(tsp, bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
+    cout << (tsp->checkPath(bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
     cout << "bestPathLen: " << *bestPathLen << endl;
-    cout << "CPU Path distance: " << calculatePath(tsp, bestPath) << endl;
+    cout << "CPU Path distance: " << tsp->calculatePathLen(bestPath) << endl;
     printMatrix("bestPath", bestPath, 1, nCities);
 
 
