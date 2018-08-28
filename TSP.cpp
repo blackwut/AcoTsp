@@ -52,6 +52,14 @@ private:
 	string edgeWieghtFormat;
 	string nodeCoordType;
 	string displayDataType;
+
+	void initEdges() {
+		const int size = dimension * dimension;
+		edges = new T[size];
+		for (int i = 0; i < size; ++i) {
+			edges[i] = 0;
+		}
+	}
 	
 	void readEdgesFromNodes(ifstream &in) {
 		
@@ -64,20 +72,20 @@ private:
 				in >> cities[i].y;
 			}
 			
-			edges = new T[dimension * dimension];
+			initEdges();
 			
 			for (int i = 0; i < dimension; ++i){
 				for (int j = 0; j < dimension; ++j) {
 					
 					T xd = cities[i].x - cities[j].x;
 					T yd = cities[i].y - cities[j].y;
-					
+
 					if ( edgeWeightType == EUC_2D ) {
 						_edges(i, j) = round( sqrt(xd * xd + yd * yd) );
 					} else if ( edgeWeightType == MAN_2D ) {
 						_edges(i, j) = round( abs(xd) + abs(yd) );
 					} else if ( edgeWeightType == MAX_2D ) {
-						_edges(i, j) = max ( round(abs(xd)), round(abs(yd)) );
+						_edges(i, j) = max( round(abs(xd)), round(abs(yd)) );
 					} else {
 						clog << EDGE_WEIGHT_TYPE << ": " << edgeWeightType << " not supported!" << endl;
 						exit(EXIT_EDGE_WEIGHT_TYPE);
@@ -85,7 +93,7 @@ private:
 				}
 			}
 			
-			free(cities);
+			delete[] cities;
 			
 		} else {
 			clog << NODE_COORD_TYPE << ": " << nodeCoordType <<" not supported!" << endl;
@@ -95,7 +103,7 @@ private:
 	
 	void readEdgesFromEdges(ifstream &in) {
 		
-		edges = new T[dimension * dimension];
+		initEdges();
 		
 		if ( edgeWieghtFormat == FULL_MATRIX ) {
 			for (int i = 0; i < dimension; ++i){
@@ -166,12 +174,12 @@ public:
 			from = path[i];
 			to = path[i + 1];
 			
-			if (from == -1) {
-				clog << "Illegal city in position: " << i << "!"<< endl;
+			if (from < 0) {
+				clog << "Illegal FROM city in position: " << i << "!"<< endl;
 				return 0;
 			}
-			if (to == -1) {
-				clog << "Illegal city in position: " << i + 1 << "!"<< endl;
+			if (to < 0) {
+				clog << "Illegal TO city in position: " << i + 1 << "!"<< endl;
 				return 0;
 			}
 			if (_edges(from, to) <= 0) {
@@ -222,7 +230,7 @@ public:
 	}
 	
 	~TSP(){
-		if (edges != NULL) free(edges);
+		if (edges != NULL) delete[] edges;
 	}
 };
 
