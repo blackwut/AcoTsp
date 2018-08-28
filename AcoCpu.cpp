@@ -15,7 +15,7 @@ private:
 	TSP<T> * tsp;
 	
 	int epoch;
-	unsigned int seed = 123;
+	unsigned int seed = 435;
 	
 	T nextRandom() {
 		static std::mt19937 generator(seed);
@@ -49,35 +49,35 @@ private:
 		
 		for (int id = 0; id < aco->nAnts; ++id) {
 			
-			int k = nextRandom() * aco->nAnts;
+			const int k = nextRandom() * aco->nAnts;
 			visited(id, k) = 0;
 			tabu(id, 0) = k;
 			
 			for (int s = 1; s < aco->nCities; ++s) {
 				T sum = 0.0f;
 				
-				int i = k;
+				const int i = k;
 				for (int j = 0; j < aco->nCities; ++j) {
 					sum += fitness(i, j) * visited(id, j);
 					p(id, j) = sum;
 				}
 				
-				T r = nextRandom() * sum;
-				k = -1;
+				const T r = nextRandom() * sum;
+				int to = -1;
 				for (int j = 0; j < aco->nCities; ++j) {
-					if ( k == -1 && p(id, j) >= r) {
-						k = j;
+					if ( to == -1 && p(id, j) >= r) {
+						to = j;
 						break;
 					}
 				}
 				
-				if ( k == -1 ) {
+				if ( to == -1 ) {
 					cout << "Huston we have a problem!" << endl;
-					k = aco->nCities - 1;
+					to = aco->nCities - 1;
 				}
 				
-				visited(id, k) = 0;
-				tabu(id, s) = k;
+				visited(id, to) = 0;
+				tabu(id, s) = to;
 			}
 			
 			T length = 0.0f;

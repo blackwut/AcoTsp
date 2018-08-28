@@ -27,7 +27,7 @@ struct Emitter: ff_node_t<int> {
                 ff_send_out(x);
             }
         
-            loadBalancer->broadcast_task(EOS);        
+            loadBalancer->broadcast_task(EOS);
             return GO_ON;
         }
 
@@ -70,42 +70,42 @@ struct Worker: ff_node_t<int> {
 
         if (in == EOS) return EOS;
 
-        int id = *in;        
+        const int id = *in;
 
         for (int i = 0; i < aco->nCities; ++i) {
 			visited(id, i) = 1;
         }
 
 //		T length = 0;
-        int k = nextRandom() * aco->nCities;
+        const int k = nextRandom() * aco->nCities;
 		visited(id, k) = 0;
 		tabu(id, 0) = k;
         
         for (int s = 1; s < aco->nCities; ++s) {
             T sum = 0;
 
-            int i = k;
+            const int i = k;
             for (int j = 0; j < aco->nCities; ++j) {
 				sum += fitness(i, j) * visited(id, j);
 				p(id, j) = sum;
             }
 
-            T r = nextRandom() * sum;
-            k = -1;
+            const T r = nextRandom() * sum;
+            int to = -1;
             for (int j = 0; j < aco->nCities; ++j) {
-				if ( k == -1 && p(id, j) >= r) {
-                    k = j;
+				if ( to == -1 && p(id, j) >= r) {
+                    to = j;
                     break;
                 }
             }
 
-			if (k == -1) {
+			if (to == -1) {
 				cout << "Huston we have a problem! sum = " << sum << " random =" << r << endl;
-				k = aco->nCities - 1;
+				to = aco->nCities - 1;
 			}
 			
-			visited(id, k) = 0;
-			tabu(id, s) = k;
+			visited(id, to) = 0;
+			tabu(id, s) = to;
 //Calculating length in this way decreese the performance about 40% in PHI server
 //			length += edges(i, k);
         }
