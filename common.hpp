@@ -40,7 +40,7 @@ void intArg(int argc, char * argv[], int i, int * val) {
 }
 
 template <typename T>
-void floatArg(int argc, char * argv[], int i, T * val) {
+void fltArg(int argc, char * argv[], int i, T * val) {
     if (argc > i) {
         *val = atof(argv[i]);
         return;
@@ -49,7 +49,7 @@ void floatArg(int argc, char * argv[], int i, T * val) {
     exit(EXIT_PARSE_FLOAT);
 }
 
-void stringArg(int argc, char * argv[], int i, char * val) {
+void strArg(int argc, char * argv[], int i, char * val) {
     if (argc > i) {
         strcpy(val, argv[i]);
         return;
@@ -82,7 +82,6 @@ void stopTimer() {
 
 long getTimerMS() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(endPoint - startPoint).count();
-
 }
 
 long getTimerUS() {

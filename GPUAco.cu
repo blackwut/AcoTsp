@@ -58,7 +58,7 @@ void calculateFitness(float * fitness, float * pheromone, float * eta, float alp
     fitness[id] = __powf(pheromone[id], alpha) * __powf(eta[id], beta);
 }
 
-/*
+
 __global__
 void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateXORWOW_t * state)
 {
@@ -119,54 +119,54 @@ void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateX
 		visited[k] = 0;
 		tabu[idx * cols + s] = k;
 	}
-}*/
-
-
-__global__
-void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateXORWOW_t * state)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if ( idx >= rows ) return;
-
-    float p[1024];
-    int visited[1024];
-    float r;
-    float sum;
-    int i;
-    int j;
-    int k;
-
-    for (i = 0; i < cols; ++i) {
-        visited[i] = 1;
-    }
-
-    k = cols * randXOR(state + idx);
-    visited[k] = 0;
-    tabu[idx * cols] = k;
-
-    for (int s = 1; s < cols; ++s) {
-
-        sum = 0.0f;
-        i = k;
-        for (j = 0; j < cols; ++j) {
-            sum += fitness[i * cols + j] * visited[j];
-            p[j] = sum;
-        }
-
-        r = randXOR(state + idx) * sum;
-        k = -1;
-        for (j = 0; j < cols; ++j) {
-            if ( k == -1 && p[j] > r ) {
-                k = j;
-            }
-            //k += (k == -1) * (p[j] > r) * j;
-        }
-        //k += 1;
-        visited[k] = 0;
-        tabu[idx * cols + s] = k;
-    }
 }
+
+
+// __global__
+// void claculateTour(int * tabu, float * fitness, int rows, int cols, curandStateXORWOW_t * state)
+// {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+//     if ( idx >= rows ) return;
+
+//     float p[1024];
+//     int visited[1024];
+//     float r;
+//     float sum;
+//     int i;
+//     int j;
+//     int k;
+
+//     for (i = 0; i < cols; ++i) {
+//         visited[i] = 1;
+//     }
+
+//     k = cols * randXOR(state + idx);
+//     visited[k] = 0;
+//     tabu[idx * cols] = k;
+
+//     for (int s = 1; s < cols; ++s) {
+
+//         sum = 0.0f;
+//         i = k;
+//         for (j = 0; j < cols; ++j) {
+//             sum += fitness[i * cols + j] * visited[j];
+//             p[j] = sum;
+//         }
+
+//         r = randXOR(state + idx) * sum;
+//         k = -1;
+//         for (j = 0; j < cols; ++j) {
+//             if ( k == -1 && p[j] > r ) {
+//                 k = j;
+//             }
+//             //k += (k == -1) * (p[j] > r) * j;
+//         }
+//         //k += 1;
+//         visited[k] = 0;
+//         tabu[idx * cols + s] = k;
+//     }
+// }
 
 __global__
 void calculateTourLen(int * tabu, float * distance, int * tourLen, int rows, int cols)
@@ -276,11 +276,11 @@ int main(int argc, char * argv[]) {
 	argc--;
 	argv++;
 	int args = 0;
-	stringArg(argc, argv, args++, path);
-	floatArg(argc, argv, args++, &alpha);
-	floatArg(argc, argv, args++, &beta);
-	floatArg(argc, argv, args++, &q);
-	floatArg(argc, argv, args++, &rho);
+	strArg(argc, argv, args++, path);
+	fltArg(argc, argv, args++, &alpha);
+	fltArg(argc, argv, args++, &beta);
+	fltArg(argc, argv, args++, &q);
+	fltArg(argc, argv, args++, &rho);
 	intArg(argc, argv, args++, &maxEpoch);
 
 	TSP<D_TYPE> * tsp = new TSP<D_TYPE>(path);
