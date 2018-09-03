@@ -49,13 +49,13 @@ private:
 		
 		for (int id = 0; id < aco->nAnts; ++id) {
 			
-			const int k = nextRandom() * aco->nAnts;
+			int k = nextRandom() * aco->nAnts;
 			visited(id, k) = 0;
 			tabu(id, 0) = k;
 			
 			for (int s = 1; s < aco->nCities; ++s) {
-				T sum = 0.0f;
 				
+				T sum = 0.0f;
 				const int i = k;
 				for (int j = 0; j < aco->nCities; ++j) {
 					sum += fitness(i, j) * visited(id, j);
@@ -63,21 +63,21 @@ private:
 				}
 				
 				const T r = nextRandom() * sum;
-				int to = -1;
+				k = -1;
 				for (int j = 0; j < aco->nCities; ++j) {
-					if ( to == -1 && p(id, j) >= r) {
-						to = j;
+					if ( k == -1 && p(id, j) >= r ) {
+						k = j;
 						break;
 					}
 				}
 				
-				if ( to == -1 ) {
+				if ( k == -1 ) {
 					cout << "Huston we have a problem!" << endl;
-					to = aco->nCities - 1;
+					k = aco->nCities - 1;
 				}
 				
-				visited(id, to) = 0;
-				tabu(id, s) = to;
+				visited(id, k) = 0;
+				tabu(id, s) = k;
 			}
 			
 			T length = 0.0f;

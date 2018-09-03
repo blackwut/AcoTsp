@@ -14,7 +14,7 @@ acocpu7: $(OBJECTS_CPU)
 
 
 acogpu: $(OBJECTS_GPU)
-	nvcc -O3 -g -lineinfo $< -o $@
+	nvcc -Xptxas="-v" -O3 -g -lineinfo $< -o $@
 
 acocpu_san: $(OBJECTS_CPU)
 	$(CXX) $(CXX_FLAGS) -fsanitize=thread $< -o $@ $(LD_FLAGS)
