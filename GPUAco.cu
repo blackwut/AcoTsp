@@ -11,6 +11,8 @@
 #include "TSP.cpp"
 #include <float.h>
 
+#include <cooperative_groups.h>
+using namespace cooperative_groups;
 
 #define TOUR_GLOBAL 1
 #define TOUR_PRIVATE 2
@@ -255,7 +257,8 @@ void claculateTourGlobal(int * tabu, float * fitness, float * p, int * visited, 
     }
 }
 
-__device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
+__device__ __forceinline__ 
+float atomicMaxFloat (float * addr, float value) {
     float old;
     old = (value >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(value))) :
          __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
@@ -265,6 +268,7 @@ __device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
 
 
 #define FULLMASK 0xFFFFFFFF
+#define fcmp(a, b) fabs((a) - (b)) < FLT_EPSILON
 
 __inline__ __device__
 float scanWarpFloat(float x) {
@@ -277,104 +281,201 @@ float scanWarpFloat(float x) {
     return x;
 }
 
+__device__ __forceinline__
+float scanTileFloat(const thread_block_tile<32> & g, float x) {
+    #pragma unroll
+    for( uint32_t offset = 1 ; offset < 32 ; offset <<= 1 ) {
+        float y = g.shfl_up(x, offset);
+        if(g.thread_rank() >= offset) x += y;
+    }
+    return x;
+}
+
+__device__ __forceinline__
+float maxTileFloat(const thread_block_tile<32> & g, float x) {
+    
+    #pragma unroll
+    for ( uint32_t offset = 16; offset > 0; offset >>= 1 ) {
+        const float y = g.shfl_xor(x, offset);
+        x = fmaxf(x, y);
+    }
+    return x;
+}
+
 __global__
 void claculateTourRegister(int * tabu, float * fitness, float * dumpFloat, int * dumpInt, int rows, int cols, int warps, curandStateXORWOW_t * state)
 {
-    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    // if (tid >= cols) return;
-    
-    const uint32_t numberOfBlocks = (cols + warpSize - 1) / warpSize;
 
-    extern __shared__ int smem[];
-    int   * visited = smem;
-    float * p       = (float *) &visited[cols];
-    int   * k       = (int *)   &p[cols];
-    float * reduce  = (float *) &k[1];
+    extern __shared__ uint32_t smem[];
+    uint32_t * visited = smem;
+    float    * p       = (float *)    &visited[cols];
+    uint32_t * k       = (uint32_t *) &p[cols];
+    float    * reduce  = (float *)    &k[1];
 
-    for (int i = tid; i < cols; i += blockDim.x) { 
+    thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
+
+    const uint32_t tid = threadIdx.x;
+
+    // initialize visited array
+    for (uint32_t i = tid; i < cols; i += blockDim.x) { 
         visited[i] = 1;
     }
     __syncthreads();
 
-    if (threadIdx.x == 0) {
-        *k = cols * 0.5;//randXOR(state + blockIdx.x);
+    // get random starting city and update visited and tabu
+    if (tid == 0) {
+        *k = cols * randXOR(state + blockIdx.x);
         visited[*k] = 0;
         tabu[0] = *k; //TODO: generare indice corretto per la formica calcolata da blockIdx.x
     }
     __syncthreads();
 
+    // get starting city from shared memory
     uint32_t kappa = *k;
-    for (int s = 1; s < cols; ++s) {
-        for (int i = tid; i < cols; i += blockDim.x) { 
+
+    for (uint32_t s = 1; s < cols; ++s) {
+
+        // update probability values
+        for (uint32_t i = tid; i < cols; i += blockDim.x) { 
             p[i] = fitness[kappa * cols + i] * visited[i];
-            // dumpFloat[i] = p[i];
+        }
+        __syncthreads();
+
+        const uint32_t numberOfWarps = blockDim.x / 32;
+        const uint32_t numberOfBlocks = (cols + 31) / 32;
+        const uint32_t tileId = tid / 32;
+        const uint32_t threadRank = tile32.thread_rank();
+
+        for (uint32_t blockId = tileId; blockId < numberOfBlocks; blockId += numberOfWarps) {
+            const uint32_t warpTid = threadRank + (blockId * 32);
+            
+            const float x = (warpTid < cols) ? p[warpTid] : 0.f;
+            const float y = scanTileFloat(tile32, x);
+            const float z = tile32.shfl(y, 31);
+            if (warpTid < cols) p[warpTid] = y / z;
+            if (threadRank == 0) reduce[blockId] = z;
         }
 
         __syncthreads();
 
-        const uint32_t warpId = threadIdx.x / 32;
-        for (int blockIndex = warpId; blockIndex < numberOfBlocks; blockIndex += warps) {
-            const uint32_t warpTid = (threadIdx.x & 31) + (blockIndex * warpSize);
+        if (tileId == 0) {
 
-            const float x = (warpTid < cols ? p[warpTid] : 0.f);
-            const float y = scanWarpFloat(x);               // Scan and return the warpTid corresponding value
-            const float z = __shfl_sync(FULLMASK, y, 31);   // Broadcast the last value of Scan
+            uint32_t selectedBlock = -1;
+            float selectedMax = -1.f;
 
-            __syncwarp();
-            if (warpTid < cols) {p[warpTid] = y / z; reduce[blockIndex] = z;}
-            if (warpTid < cols) dumpFloat[warpTid] = p[warpTid];
-        }
+            //TODO: verify if selectedBlock is correct when cols >= 1024
+            for (uint32_t stride = 0; stride < numberOfBlocks; stride += 32) {
+                const uint32_t warpTid = threadRank + (stride * 32);
+                const float x = (warpTid < numberOfBlocks) ? reduce[warpTid] : 0.f;
+                selectedMax = fmaxf(x, selectedMax);
+                selectedBlock = (x == selectedMax) ? warpTid : selectedBlock;
 
-        __syncthreads();
+                const float y = maxTileFloat(tile32, selectedMax);
+                const uint32_t mask = tile32.ballot( x == y );
+                const uint32_t maxTile = __ffs(mask) - 1;
+                selectedMax = tile32.shfl(y, maxTile);
+                selectedBlock = tile32.shfl(selectedBlock, maxTile);
+            }
 
-
-        if ( threadIdx.x < 32 ) {
-
-            const uint32_t localID = threadIdx.x & 31;
-
-            const uint32_t randomBlock = s / 32;
-
-
-            float randomFloat = 0.f;
-            if (localID == 0) {
+            // generate and broadcast randomFloat
+            float randomFloat = -1.f;
+            if (threadRank == 0) {
                 randomFloat = randXOR(state + blockIdx.x);
             }
-
-            randomFloat = __shfl_sync(FULLMASK, randomFloat, 0);
-
-//             float rng = 0.f;
-//             uint32_t selectedBlock = 0;
-//             if (tid == 0) {
-//                 float max = reduce[0];
-//                 for (uint32_t i = 1; i < numberOfBlocks; ++i) {
-//                     const float r = reduce[i];
-//                     printf("r - max %0.24f - %0.24f \n", r, max);
-//                     max = fmaxf(r, max);
-//                     printf("i - max %d - %0.24f\n", i, max);
-// #define fcmp(a, b) fabs(a - b) < FLT_EPSILON
-//                     if (fcmp(r, max)) {
-//                         selectedBlock = i;
-//                     }
-//                     printf("selectedBlock: %d\n", selectedBlock);
-//                 }
-//                 rng = randXOR(state + blockIdx.x);
-//             }
-
-//             selectedBlock = __shfl_sync(FULLMASK, selectedBlock, 0);
-//             rng = __shfl_sync(FULLMASK, rng, 0);
-
-            const uint32_t pIndex = randomBlock * 32 + localID;
+            randomFloat = tile32.shfl(randomFloat, 0);
+            
+            const uint32_t pIndex = selectedBlock * 32 + threadRank;
             const uint32_t bitmask = __ballot_sync(FULLMASK, randomFloat < p[pIndex]);
             const uint32_t selected = __ffs(bitmask) - 1;
-            kappa = randomBlock * 32 + selected;
-
-            if (localID == selected) {
-                // printf("%d - %d - %d) rng: %f - p[%d] = %f\n", s, localID, selectedBlock, rng, pIndex, p[pIndex]);
-                tabu[s] = pIndex; //TODO: generare indice corretto per la formica calcolata da blockIdx.x
-                visited[pIndex] = 0;
+            *k = selectedBlock * 32 + selected;
+            if (threadRank == selected) {
+                tabu[s] = *k; //TODO: generare indice corretto per la formica calcolata da blockIdx.x
+                visited[*k] = 0;
             }
         }
+        __syncthreads();
+        kappa = *k;
     }
+    
+
+    
+//     const uint32_t numberOfBlocks = (cols + warpSize - 1) / warpSize;
+
+    
+
+    
+
+    
+//     for (int s = 1; s < cols; ++s) {
+//         for (int i = tid; i < cols; i += blockDim.x) { 
+//             p[i] = fitness[kappa * cols + i] * visited[i];
+//             // dumpFloat[i] = p[i];
+//         }
+
+//         __syncthreads();
+
+//         const uint32_t warpId = threadIdx.x / 32;
+//         for (int blockIndex = warpId; blockIndex < numberOfBlocks; blockIndex += warps) {
+
+//             const float x = (warpTid < cols ? p[warpTid] : 0.f);
+//             const float y = scanWarpFloat(x);               // Scan and return the warpTid corresponding value
+//             const float z = __shfl_sync(FULLMASK, y, 31);   // Broadcast the last value of Scan
+
+//             __syncwarp();
+//             if (warpTid < cols) {p[warpTid] = y / z; reduce[blockIndex] = z;}
+//             if (warpTid < cols) dumpFloat[warpTid] = p[warpTid];
+//         }
+
+//         __syncthreads();
+
+
+//         if ( threadIdx.x < 32 ) {
+
+//             const uint32_t localID = threadIdx.x & 31;
+
+//             const uint32_t randomBlock = s / 32;
+
+
+//             float randomFloat = 0.f;
+//             if (localID == 0) {
+//                 randomFloat = randXOR(state + blockIdx.x);
+//             }
+
+//             randomFloat = __shfl_sync(FULLMASK, randomFloat, 0);
+
+// //             float rng = 0.f;
+// //             uint32_t selectedBlock = 0;
+// //             if (tid == 0) {
+// //                 float max = reduce[0];
+// //                 for (uint32_t i = 1; i < numberOfBlocks; ++i) {
+// //                     const float r = reduce[i];
+// //                     printf("r - max %0.24f - %0.24f \n", r, max);
+// //                     max = fmaxf(r, max);
+// //                     printf("i - max %d - %0.24f\n", i, max);
+// // #define fcmp(a, b) fabs(a - b) < FLT_EPSILON
+// //                     if (fcmp(r, max)) {
+// //                         selectedBlock = i;
+// //                     }
+// //                     printf("selectedBlock: %d\n", selectedBlock);
+// //                 }
+// //                 rng = randXOR(state + blockIdx.x);
+// //             }
+
+// //             selectedBlock = __shfl_sync(FULLMASK, selectedBlock, 0);
+// //             rng = __shfl_sync(FULLMASK, rng, 0);
+
+//             const uint32_t pIndex = randomBlock * 32 + localID;
+//             const uint32_t bitmask = __ballot_sync(FULLMASK, randomFloat < p[pIndex]);
+//             const uint32_t selected = __ffs(bitmask) - 1;
+//             kappa = randomBlock * 32 + selected;
+
+//             if (localID == selected) {
+//                 // printf("%d - %d - %d) rng: %f - p[%d] = %f\n", s, localID, selectedBlock, rng, pIndex, p[pIndex]);
+//                 tabu[s] = pIndex; //TODO: generare indice corretto per la formica calcolata da blockIdx.x
+//                 visited[pIndex] = 0;
+//             }
+//         }
+//     }
         // float sum = 0.0f;
         // const int i = k;
         // for (int j = 0; j < cols; ++j) {
@@ -679,29 +780,29 @@ int main(int argc, char * argv[]) {
 
             case TOUR_REGISTER:
                 gridTour.x = 1;            // number of blocks
-                dimBlockTour.x = 64;         // number of threads in a block
+                dimBlockTour.x = 128;         // number of threads in a block
                 const uint32_t numberOfWarps = dimBlockTour.x / 32;
 
                 claculateTourRegister<<<gridTour, dimBlockTour, (nAnts * 2 + 1 + numberOfWarps) * sizeof(int)>>>(tabu, fitness, dumpFloat, dumpInt, nAnts, nCities, numberOfWarps, state);
             break;
         }
 
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
 
 
-        // // for (uint32_t i = 0; i < nAnts; ++i) {
-        // //     cout << "[" << i << "] = " << dumpInt[i] << endl;
-        // // }
-        for (uint32_t i = 0; i < nAnts; ++i) {
-            cout << "[" << i << "] = " << dumpFloat[i] << endl;
-        }
+        // // // for (uint32_t i = 0; i < nAnts; ++i) {
+        // // //     cout << "[" << i << "] = " << dumpInt[i] << endl;
+        // // // }
+        // for (uint32_t i = 0; i < nAnts; ++i) {
+        //     cout << "[" << i << "] = " << dumpFloat[i] << endl;
+        // }
 
         
-        // calculateTourLen<<<gridAnt1D, dimBlock1D>>>(tabu, distance, tourLen, nAnts, nCities);
+        calculateTourLen<<<gridAnt1D, dimBlock1D>>>(tabu, distance, tourLen, nAnts, nCities);
         
-        // updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1) == maxEpoch));
-        // updateDelta<<<gridAnt1D, dimBlock1D>>>(delta, tabu, tourLen, nAnts, nCities, q);
-        // updatePheromone<<<gridMatrix2D, dimBlock2D>>>(pheromone, delta, nCities, nCities, rho);
+        updateBest<<<gridAnt1D, dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1) == maxEpoch));
+        updateDelta<<<gridAnt1D, dimBlock1D>>>(delta, tabu, tourLen, nAnts, nCities, q);
+        updatePheromone<<<gridMatrix2D, dimBlock2D>>>(pheromone, delta, nCities, nCities, rho);
 
     } while (++epoch < maxEpoch);
 
@@ -709,6 +810,8 @@ int main(int argc, char * argv[]) {
 
     stopAndPrintTimer();
 
+    cout << (tsp->checkPath(tabu) == 1 ? "Path OK!" : "Error in the path!") << endl;
+    cout << "CPU Path distance: " << tsp->calculatePathLen(tabu) << endl;
     printMatrix("tabu", tabu, 1, nCities);
 
     // cout << (tsp->checkPath(bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
