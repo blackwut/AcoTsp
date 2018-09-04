@@ -192,20 +192,16 @@ public:
 	
 	T calculatePathLen(int * path) {
 		
-		int from;
-		int to;
 		T len = 0;
-		for (int i = 0; i < dimension - 1; ++i) {
-			from = path[i];
-			to = path[i + 1];
-			
-			if ( from == -1 || to == -1 ) return -1;
+		for (uint32_t i = 0; i < dimension - 1; ++i) {
+			const uint32_t from = path[i];
+			const uint32_t to   = path[i + 1];
 			
 			len += _edges(from, to);
 		}
 		
-		from = path[dimension - 1];
-		to = path[0];
+		const uint32_t from = path[dimension - 1];
+		const uint32_t to   = path[0];
 		len += _edges(from, to);
 		
 		return len;

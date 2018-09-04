@@ -44,4 +44,5 @@ acogpu
 acocpu7
 stats
 
+log*.txt
 *.dSYM

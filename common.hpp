@@ -30,6 +30,23 @@ enum ERROR {
 
 #define MAX_LEN 256
 
+template <typename T>
+T parseArg(char * arg) {
+    clog << "Error: type not supported!" << endl;
+}
+
+template<> uint32_t parseArg(char * arg) {
+    return atoi(arg);
+}
+
+template<> float parseArg(char * arg) {
+    return atof(arg);
+}
+
+template<> double parseArg(char * arg) {
+    return atof(arg);
+}
+
 void intArg(int argc, char * argv[], int i, int * val) {
     if (argc > i) {
         *val = atoi(argv[i]);
