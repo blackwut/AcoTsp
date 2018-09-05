@@ -80,15 +80,6 @@ void calculateFitness(float * fitness,
     fitness[idx] = __powf(pheromone[idx], alpha) * __powf(eta[idx], beta);
 }
 
-// __device__ __forceinline__ 
-// float atomicMaxFloat (float * addr, float value) {
-//     float old;
-//     old = (value >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(value))) :
-//          __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
-
-//     return old;
-// }
-
 __device__ __forceinline__
 float scanTileFloat(const thread_block_tile<32> & g, float x) {
     #pragma unroll
@@ -110,7 +101,7 @@ float maxTileFloat(const thread_block_tile<32> & g, float x) {
     return x;
 }
 
-#define TABU_SHARED_MEMORY 1
+#define TABU_SHARED_MEMORY 0
 
 __global__
 void claculateTour(uint32_t * tabu,
@@ -351,16 +342,18 @@ void updateDelta(float * delta,
     const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if ( idx >= rows ) return;
 
+    const float tau = q / tourLen[idx];
+
     for (uint32_t i = 0; i < cols - 1; ++i) {
         const uint32_t from = tabu[idx * cols + i];
         const uint32_t to = tabu[idx * cols + i + 1];
-        atomicAdd(delta + (from * cols + to), q / tourLen[idx]);
+        atomicAdd(delta + (from * cols + to), tau);
         // atomicAdd(delta + (to * cols + from), q / tourLen[idx]);
     }
 
     const uint32_t from = tabu[idx * cols + cols - 1];
     const uint32_t to = tabu[idx * cols];
-    atomicAdd(delta + (from * cols + to), q / tourLen[idx]);
+    atomicAdd(delta + (from * cols + to), tau);
     // atomicAdd(delta + (to * cols + from), q / tourLen[idx]);
 }
 
@@ -485,7 +478,9 @@ int main(int argc, char * argv[]) {
     const dim3 tourDimBlock(128);         // number of threads in a block
     const uint32_t tourWarps = (nCities + 31) / 32;//tourDimBlock.x / 32;
     const uint32_t tourShared = nCities   * sizeof(uint32_t) + // visited
+#if TABU_SHARED_MEMORY
                                 nCities   * sizeof(uint32_t) + // tabu
+#endif
                                 nCities   * sizeof(float)    + // p
                                 1         * sizeof(uint32_t) + // k
                                 tourWarps * sizeof(float);     //reduce
@@ -510,10 +505,10 @@ int main(int argc, char * argv[]) {
 
     stopAndPrintTimer();
 
-    printMatrix("tourLen", tourLen, 1, nAnts);
-    cout << (tsp->checkPath((int *)bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
+    // printMatrix("tourLen", tourLen, 1, nAnts);
+    cout << (tsp->checkPath(bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
     cout << "bestPathLen: " << *bestPathLen << endl;
-    cout << "CPU Path distance: " << tsp->calculatePathLen((int *)bestPath) << endl;
+    cout << "CPU Path distance: " << tsp->calculatePathLen(bestPath) << endl;
     printMatrix("bestPath", bestPath, 1, nCities);
 
 
