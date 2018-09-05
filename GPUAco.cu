@@ -117,6 +117,7 @@ void claculateTour(uint32_t * tabu,
                    const float * fitness,
                    const uint32_t rows,
                    const uint32_t cols,
+                   const uint32_t strideShared,
                    curandStateXORWOW_t * state)
 {
 
@@ -134,7 +135,6 @@ void claculateTour(uint32_t * tabu,
     uint32_t * k       = (uint32_t *) &p[cols];
     float    * reduce  = (float *)    &k[1];
 #endif
-
     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
     const uint32_t tid = threadIdx.x;
 
@@ -208,7 +208,7 @@ void claculateTour(uint32_t * tabu,
             randomFloat = tile32.shfl(randomFloat, 0);
             
             const uint32_t probabilityId = selectedBlock * 32 + tid;
-            if (selectedBlock * 32 + tid < cols) {
+            if (probabilityId < cols) {
                 const uint32_t bitmask = tile32.ballot(randomFloat < p[probabilityId]); 
                 const uint32_t selected = __ffs(bitmask) - 1;
 
@@ -250,6 +250,8 @@ void calculateTourLen(const float * distance,
                       const uint32_t rows,
                       const uint32_t cols)
 {
+    __shared__ float finalLength[1];
+
     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
     const uint32_t numberOfBlocks = (cols + 31) / 32;
 
@@ -272,36 +274,33 @@ void calculateTourLen(const float * distance,
         const float    len  = distance[from * cols + to];
         
         totalLength += len;
+
+        finalLength[0] = 0.f;
     }
+
+    __syncthreads();
 
     if (tile32.thread_rank() == 0) {
-        atomicAdd(tourLen + blockIdx.x, totalLength);
+        atomicAdd(finalLength, totalLength);
+    }
+
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        tourLen[blockIdx.x] = finalLength[0];
     }
 }
 
-// __device__ static float atomicMin(float * address, float val)
-// {
-//     int* address_as_i = (int*) address;
-//     int old = *address_as_i, assumed;
-//     do {
-//         assumed = old;
-//         old = ::atomicCAS(address_as_i, assumed,
-//             __float_as_int(::fminf(val, __int_as_float(assumed))));
-//     } while (assumed != old);
-//     return __int_as_float(old);
-// }
-
-__device__ static float atomicMin(float * address, float value)
-{
-    float old = *address, assumed;
-    if(old <= value) return old;
-    do {
-        assumed = old;
-        old = atomicCAS((unsigned int*)address, __float_as_int(assumed), __float_as_int(fminf(value, assumed)));
-    } while (old!=assumed);
-    return old;
+__device__ __forceinline__
+float minTileFloat(const thread_block_tile<32> & g, float x) {
+    
+    #pragma unroll
+    for ( uint32_t offset = 16; offset > 0; offset >>= 1 ) {
+        const float y = g.shfl_xor(x, offset);
+        x = fminf(x, y);
+    }
+    return x;
 }
-
 
 __global__
 void updateBest(uint32_t * bestPath,
@@ -312,18 +311,32 @@ void updateBest(uint32_t * bestPath,
                 float * bestPathLen,
                 const uint32_t last)
 {
-    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if ( idx >= rows ) return;
+    thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
+    const uint32_t tid = threadIdx.x;
 
-    const float len = tourLen[idx];
-    atomicMin(bestPathLen, len);
+    uint32_t bestAnt = 1234567890; // fake number just to be sure that will not appear somewere
+    float minLength = FLT_MAX;
 
-    __syncthreads();
+    //TODO: verify if bestAnt is correct when cols >= 1024
+    for (uint32_t stride = 0; stride < cols; stride += 32) {
+        const uint32_t warpTid = tid + stride;
+        const float x = (warpTid < cols) ? tourLen[warpTid] : FLT_MAX;
+        minLength = fminf(x, minLength);
+        bestAnt = (x == minLength) ? warpTid : bestAnt;
 
-    if (*bestPathLen == len) {
-        for (uint32_t i = 0; i < cols; ++i) {
-            bestPath[i] = tabu[idx * cols + i];
-        }
+        const float y = minTileFloat(tile32, minLength);
+        const uint32_t mask = tile32.ballot( x == y );
+        const uint32_t maxTile = __ffs(mask) - 1;
+        minLength = tile32.shfl(y, maxTile);
+        bestAnt = tile32.shfl(bestAnt, maxTile);
+    }
+
+    for (uint32_t i = tid; i < cols; i += 32) {
+        bestPath[i] = tabu[bestAnt * cols + i];
+    }
+
+    if (tid == 0) {
+        bestPathLen[0] = minLength;
     }
 }
 
@@ -442,6 +455,10 @@ int main(int argc, char * argv[]) {
     cudaMallocManaged(&bestPath,    nCities * sizeof(uint32_t));
     cudaMallocManaged(&bestPathLen, sizeof(float));
 
+    uint32_t totalMemory = (2 * nAnts + elems * 5 + nAnts * nCities + nCities) * sizeof(uint32_t);
+    std::cout << " *** totalMemory **** \t" << (totalMemory / 1024.f) / 1024.f << "MB" << std::endl;
+
+
     *bestPathLen = INT_MAX;
 
     for (uint32_t i = 0; i < nCities; ++i) {
@@ -450,11 +467,9 @@ int main(int argc, char * argv[]) {
         }
     }
 
-    dim3 dimBlockSmall(8);
     dim3 dimBlock1D(32);
     dim3 dimBlock2D(16, 16);
 
-    dim3 gridAntSmall(numberOfBlocks(nAnts, dimBlockSmall.x));
     dim3 gridAnt1D(numberOfBlocks(nAnts, dimBlock1D.x));
     // dim3 gridAnt2D(numberOfBlocks(nAnts, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
     dim3 gridMatrix2D(numberOfBlocks(nCities, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
@@ -464,38 +479,38 @@ int main(int argc, char * argv[]) {
     initCurand<<<gridAnt1D, dimBlock1D>>>(state, seed, nAnts);
     initialize<<<gridMatrix2D, dimBlock2D>>>(distance, eta, pheromone, delta, valPheromone, nCities, nCities);
 
+    const uint32_t visitedStride = ((nCities + 31) / 32) * 32;
 
     const dim3 tourGrid(nCities);         // number of blocks
     const dim3 tourDimBlock(128);         // number of threads in a block
-    const uint32_t tourWarps = tourDimBlock.x / 32;
+    const uint32_t tourWarps = (nCities + 31) / 32;//tourDimBlock.x / 32;
     const uint32_t tourShared = nCities   * sizeof(uint32_t) + // visited
                                 nCities   * sizeof(uint32_t) + // tabu
                                 nCities   * sizeof(float)    + // p
                                 1         * sizeof(uint32_t) + // k
                                 tourWarps * sizeof(float);     //reduce
 
+    std::cout << " *** sharedMemory **** \t" << (tourShared / 1024.f) << "KB" << std::endl;
+
+
     const dim3 lenGrid(nAnts);
     const dim3 lenDimBlock(64);
     const uint32_t lenShared = lenDimBlock.x / 32 * sizeof(float);
-
     uint32_t epoch = 0;
     do {
         calculateFitness <<<gridMatrix2D, dimBlock2D>>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);
-        claculateTour    <<<tourGrid,     tourDimBlock, tourShared >>>(tabu, fitness, nAnts, nCities, state);
+        claculateTour    <<<tourGrid,     tourDimBlock, tourShared >>>(tabu, fitness, nAnts, nCities, visitedStride, state);
         calculateTourLen <<<lenGrid,      lenDimBlock,  lenShared  >>>(distance, tabu, tourLen, nAnts, nCities);
-        updateBest       <<<gridAnt1D,    dimBlock1D>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1) == maxEpoch));
+        updateBest       <<<1, 32>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1) == maxEpoch));
         updateDelta      <<<gridAnt1D,    dimBlock1D>>>(delta, tabu, tourLen, nAnts, nCities, q);
         updatePheromone  <<<gridMatrix2D, dimBlock2D>>>(pheromone, delta, nCities, nCities, rho);
-
     } while (++epoch < maxEpoch);
 
     cudaDeviceSynchronize();
 
     stopAndPrintTimer();
 
-        printMatrix("tourLen", tourLen, 1, nAnts);
-
-
+    printMatrix("tourLen", tourLen, 1, nAnts);
     cout << (tsp->checkPath((int *)bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
     cout << "bestPathLen: " << *bestPathLen << endl;
     cout << "CPU Path distance: " << tsp->calculatePathLen((int *)bestPath) << endl;
