@@ -53,10 +53,9 @@ private:
 	string nodeCoordType;
 	string displayDataType;
 
-	void initEdges() {
-		const int size = dimension * dimension;
+	void initEdges(const uint32_t size ) {
 		edges = new T[size];
-		for (int i = 0; i < size; ++i) {
+		for (uint32_t i = 0; i < size; ++i) {
 			edges[i] = 0;
 		}
 	}
@@ -72,7 +71,7 @@ private:
 				in >> cities[i].y;
 			}
 			
-			initEdges();
+			initEdges(dimension * dimension);
 			
 			for (int i = 0; i < dimension; ++i){
 				for (int j = 0; j < dimension; ++j) {
@@ -103,7 +102,7 @@ private:
 	
 	void readEdgesFromEdges(ifstream &in) {
 		
-		initEdges();
+		initEdges(dimension * dimension);
 		
 		if ( edgeWieghtFormat == FULL_MATRIX ) {
 			for (int i = 0; i < dimension; ++i){
@@ -165,11 +164,11 @@ public:
 		in.close();
 	}
 	
-	
-	int checkPath(int * path) {
+	template <typename P>
+	int checkPath(P * path) {
 		
-		int from;
-		int to;
+		P from;
+		P to;
 		for (int i = 0; i < dimension - 1; ++i) {
 			from = path[i];
 			to = path[i + 1];
@@ -190,18 +189,19 @@ public:
 		return 1;
 	}
 	
-	T calculatePathLen(int * path) {
+	template <typename P>
+	T calculatePathLen(P * path) {
 		
 		T len = 0;
 		for (uint32_t i = 0; i < dimension - 1; ++i) {
-			const uint32_t from = path[i];
-			const uint32_t to   = path[i + 1];
+			const P from = path[i];
+			const P to   = path[i + 1];
 			
 			len += _edges(from, to);
 		}
 		
-		const uint32_t from = path[dimension - 1];
-		const uint32_t to   = path[0];
+		const P from = path[dimension - 1];
+		const P to   = path[0];
 		len += _edges(from, to);
 		
 		return len;
