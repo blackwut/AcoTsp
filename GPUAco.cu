@@ -101,31 +101,21 @@ float maxTileFloat(const thread_block_tile<32> & g, float x) {
     return x;
 }
 
-#define TABU_SHARED_MEMORY 0
-
 __global__
 void claculateTour(uint32_t * tabu,
                    const float * fitness,
                    const uint32_t rows,
                    const uint32_t cols,
-                   const uint32_t strideShared,
                    curandStateXORWOW_t * state)
 {
+    const uint32_t numberOfBlocks = (cols + 31) / 32;
 
-#if TABU_SHARED_MEMORY
     extern __shared__ uint32_t smem[];
-    uint32_t * visited = (uint32_t *)  smem;
-    uint32_t * tabus   = (uint32_t *) &visited[cols];
-    float    * p       = (float *)    &tabus[cols];
+    float    * p       = (float *)    smem;
     uint32_t * k       = (uint32_t *) &p[cols];
     float    * reduce  = (float *)    &k[1];
-#else 
-    extern __shared__ uint32_t smem[];
-    uint32_t * visited = (uint32_t *)  smem;
-    float    * p       = (float *)    &visited[cols];
-    uint32_t * k       = (uint32_t *) &p[cols];
-    float    * reduce  = (float *)    &k[1];
-#endif
+    uint8_t * visited  = (uint8_t *)  &reduce[numberOfBlocks];
+
     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
     const uint32_t tid = threadIdx.x;
 
@@ -140,11 +130,7 @@ void claculateTour(uint32_t * tabu,
         const uint32_t kappa = cols * randXOR(state + blockIdx.x);
         *k = kappa;
         visited[kappa] = 0;
-#if TABU_SHARED_MEMORY
-        tabus[0] = kappa;
-#else
         tabu[blockIdx.x * cols] = kappa;
-#endif
     }
     __syncthreads();
 
@@ -157,8 +143,6 @@ void claculateTour(uint32_t * tabu,
             p[i] = fitness[kappa * cols + i] * visited[i];
         }
         __syncthreads();
-
-        const uint32_t numberOfBlocks = (cols + 31) / 32;
 
         for (uint32_t blockId = tid / 32; blockId < numberOfBlocks; blockId += blockDim.x / 32) {
             const uint32_t warpTid = tile32.thread_rank() + (blockId * 32);
@@ -205,11 +189,7 @@ void claculateTour(uint32_t * tabu,
 
                 if (tid == selected) {
                     const uint32_t nextCity = selectedBlock * 32 + selected;
-#if TABU_SHARED_MEMORY
-                    tabus[s] = nextCity;
-#else
                     tabu[blockIdx.x * cols + s] = nextCity;
-#endif
                     visited[nextCity] = 0;
                     *k = nextCity;
                 }
@@ -217,11 +197,6 @@ void claculateTour(uint32_t * tabu,
         }
         __syncthreads();
     }
-#if TABU_SHARED_MEMORY
-    for (uint32_t i = tid; i < cols; i += blockDim.x) { 
-        tabu[blockIdx.x * cols + i] = tabus[i];
-    }
-#endif
 }
 
 __device__ __forceinline__
@@ -299,8 +274,7 @@ void updateBest(uint32_t * bestPath,
                 const float * tourLen,
                 const uint32_t rows,
                 const uint32_t cols,
-                float * bestPathLen,
-                const uint32_t last)
+                float * bestPathLen)
 {
     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
     const uint32_t tid = threadIdx.x;
@@ -331,6 +305,7 @@ void updateBest(uint32_t * bestPath,
     }
 }
 
+
 __global__
 void updateDelta(float * delta,
                  const uint32_t * tabu,
@@ -339,22 +314,27 @@ void updateDelta(float * delta,
                  const uint32_t cols,
                  const float q)
 {
-    const uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if ( idx >= rows ) return;
+    extern __shared__ uint32_t tabus[];
+    const uint32_t tid = threadIdx.x;
 
-    const float tau = q / tourLen[idx];
+    for (uint32_t i = tid; i < cols; i += blockDim.x) { 
+        tabus[i] = tabu[blockIdx.x * cols + i];
+    }
+    __syncthreads();
 
-    for (uint32_t i = 0; i < cols - 1; ++i) {
-        const uint32_t from = tabu[idx * cols + i];
-        const uint32_t to = tabu[idx * cols + i + 1];
+    const float tau = q / tourLen[blockIdx.x];
+
+    for (uint32_t i = tid; i < cols - 1; i += blockDim.x) { 
+        const uint32_t from = tabus[i];
+        const uint32_t to   = tabus[i + 1];
         atomicAdd(delta + (from * cols + to), tau);
-        // atomicAdd(delta + (to * cols + from), q / tourLen[idx]);
     }
 
-    const uint32_t from = tabu[idx * cols + cols - 1];
-    const uint32_t to = tabu[idx * cols];
-    atomicAdd(delta + (from * cols + to), tau);
-    // atomicAdd(delta + (to * cols + from), q / tourLen[idx]);
+    if (tid == 0) {
+        const uint32_t from = tabus[cols - 1];
+        const uint32_t to   = tabus[0];
+        atomicAdd(delta + (from * cols + to), tau);
+    }
 }
 
 __global__
@@ -464,48 +444,49 @@ int main(int argc, char * argv[]) {
     dim3 dimBlock2D(16, 16);
 
     dim3 gridAnt1D(numberOfBlocks(nAnts, dimBlock1D.x));
-    // dim3 gridAnt2D(numberOfBlocks(nAnts, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
     dim3 gridMatrix2D(numberOfBlocks(nCities, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
 
     startTimer();
 
-    initCurand<<<gridAnt1D, dimBlock1D>>>(state, seed, nAnts);
+    initCurand<<<gridAnt1D,    dimBlock1D>>>(state, seed, nAnts);
     initialize<<<gridMatrix2D, dimBlock2D>>>(distance, eta, pheromone, delta, valPheromone, nCities, nCities);
 
-    const uint32_t visitedStride = ((nCities + 31) / 32) * 32;
+    const dim3 tourGrid(nCities); // number of blocks
+    const dim3 tourBlock(128); // number of threads in a block
+    const uint32_t reduceElems = (nCities + 31) / 32;
+    const uint32_t tourShared  = nCities      * sizeof(float)    + // p
+                                 1            * sizeof(uint32_t) + // k
+                                 reduceElems  * sizeof(float)    + //reduce
+                                 nCities      * sizeof(uint8_t); // visited
 
-    const dim3 tourGrid(nCities);         // number of blocks
-    const dim3 tourDimBlock(128);         // number of threads in a block
-    const uint32_t tourWarps = (nCities + 31) / 32;//tourDimBlock.x / 32;
-    const uint32_t tourShared = nCities   * sizeof(uint32_t) + // visited
-#if TABU_SHARED_MEMORY
-                                nCities   * sizeof(uint32_t) + // tabu
-#endif
-                                nCities   * sizeof(float)    + // p
-                                1         * sizeof(uint32_t) + // k
-                                tourWarps * sizeof(float);     //reduce
 
     std::cout << " *** sharedMemory **** \t" << (tourShared / 1024.f) << "KB" << std::endl;
 
 
     const dim3 lenGrid(nAnts);
-    const dim3 lenDimBlock(64);
-    const uint32_t lenShared = lenDimBlock.x / 32 * sizeof(float);
+    const dim3 lenBlock(64);
+    const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
+
+    const dim3 bestGrid(1);
+    const dim3 bestBlock(32);
+
+    const dim3 deltaGrid(nAnts);
+    const dim3 deltaBlock(32);
+    const uint32_t deltaShared = nCities * sizeof(uint32_t);
+
     uint32_t epoch = 0;
     do {
-        calculateFitness <<<gridMatrix2D, dimBlock2D>>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);
-        claculateTour    <<<tourGrid,     tourDimBlock, tourShared >>>(tabu, fitness, nAnts, nCities, visitedStride, state);
-        calculateTourLen <<<lenGrid,      lenDimBlock,  lenShared  >>>(distance, tabu, tourLen, nAnts, nCities);
-        updateBest       <<<1, 32>>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen, ((epoch + 1) == maxEpoch));
-        updateDelta      <<<gridAnt1D,    dimBlock1D>>>(delta, tabu, tourLen, nAnts, nCities, q);
-        updatePheromone  <<<gridMatrix2D, dimBlock2D>>>(pheromone, delta, nCities, nCities, rho);
+        calculateFitness <<<gridMatrix2D, dimBlock2D             >>>(fitness, pheromone, eta, alpha, beta, nCities, nCities);
+        claculateTour    <<<tourGrid,     tourBlock,  tourShared >>>(tabu, fitness, nAnts, nCities, state);
+        calculateTourLen <<<lenGrid,      lenBlock,   lenShared  >>>(distance, tabu, tourLen, nAnts, nCities);
+        updateBest       <<<bestGrid,     bestBlock              >>>(bestPath, tabu, tourLen, nAnts, nCities, bestPathLen);
+        updateDelta      <<<deltaGrid,    deltaBlock, deltaShared>>>(delta, tabu, tourLen, nAnts, nCities, q);
+        updatePheromone  <<<gridMatrix2D, dimBlock2D             >>>(pheromone, delta, nCities, nCities, rho);
     } while (++epoch < maxEpoch);
 
     cudaDeviceSynchronize();
-
+    
     stopAndPrintTimer();
-
-    // printMatrix("tourLen", tourLen, 1, nAnts);
     cout << (tsp->checkPath(bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
     cout << "bestPathLen: " << *bestPathLen << endl;
     cout << "CPU Path distance: " << tsp->calculatePathLen(bestPath) << endl;
