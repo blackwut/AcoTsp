@@ -4,7 +4,7 @@ CXX_FLAGS	= -O3 -g -std=c++14 -pedantic -Wall -Waligned-new=none -I ~/Projects/f
 LD_FLAGS	= -pthread
 
 OBJECTS_CPU = main.cpp ACO.cpp TSP.cpp AcoCpu.cpp AcoFF.cpp common.hpp
-OBJECTS_GPU = GPUAco.cu common.hpp
+OBJECTS_GPU = GPUAco.cu common.hpp TSP.cpp Aco.cpp
 
 acocpu: $(OBJECTS_CPU)
 	$(CXX) $(CXX_FLAGS) $< -o $@ $(LD_FLAGS)
