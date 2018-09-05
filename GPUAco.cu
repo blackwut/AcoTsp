@@ -101,6 +101,117 @@ float maxTileFloat(const thread_block_tile<32> & g, float x) {
     return x;
 }
 
+
+
+// __global__
+// void claculateTour(uint32_t * tabu,
+//                    const float * fitness,
+//                    const uint32_t rows,
+//                    const uint32_t cols,
+//                    curandStateXORWOW_t * state)
+// {
+//     const uint32_t numberOfBlocks = (cols + 31) / 32;
+
+//     extern __shared__ uint32_t smem[];
+//     float    * p       = (float *)    smem;
+//     uint32_t * k       = (uint32_t *) &p[cols];
+//     float    * reduce  = (float *)    &k[1];
+//     uint8_t * visited  = (uint8_t *)  &reduce[numberOfBlocks];
+
+//     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
+//     const uint32_t tid = threadIdx.x;
+
+//     // initialize visited array
+//     for (uint32_t i = tid; i < cols; i += blockDim.x) { 
+//         visited[i] = 1;
+//     }
+//     __syncthreads();
+
+//     // get random starting city and update visited and tabu
+//     if (tid == 0) {
+//         const uint32_t kappa = cols * randXOR(state + blockIdx.x);
+//         *k = kappa;
+//         visited[kappa] = 0;
+//         tabu[blockIdx.x * cols] = kappa;
+//     }
+//     __syncthreads();
+
+//     for (uint32_t s = 1; s < cols; ++s) {
+//         // get city from shared memory
+//         const uint32_t kappa = *k;
+
+//         // update probability values
+//         for (uint32_t i = tid; i < cols; i += blockDim.x) { 
+//             p[i] = fitness[kappa * cols + i] * visited[i];
+//         }
+//         __syncthreads();
+
+//         for (uint32_t blockId = tid / 32; blockId < numberOfBlocks; blockId += blockDim.x / 32) {
+//             const uint32_t warpTid = tile32.thread_rank() + (blockId * 32);
+            
+//             const float x = (warpTid < cols) ? p[warpTid] : 0.f;
+//             const float y = scanTileFloat(tile32, x);
+//             const float z = tile32.shfl(y, 31);
+//             if (warpTid < cols) p[warpTid] = y / z;
+//             if (tile32.thread_rank() == 0) reduce[blockId] = z;
+//         }
+
+//         __syncthreads();
+
+//         if (tid < 32) {
+
+//             uint32_t selectedBlock = 1234567890; // fake number just to be sure that will not appear somewere
+//             float selectedMax = -1.f;
+
+//             //TODO: verify if selectedBlock is correct when cols >= 1024
+//             for (uint32_t stride = 0; stride < numberOfBlocks; stride += 32) {
+//                 const uint32_t warpTid = tid + stride;
+//                 const float x = (warpTid < numberOfBlocks) ? reduce[warpTid] : 0.f;
+//                 selectedMax = fmaxf(x, selectedMax);
+//                 selectedBlock = (x == selectedMax) ? warpTid : selectedBlock;
+
+//                 const float y = maxTileFloat(tile32, selectedMax);
+//                 const uint32_t mask = tile32.ballot( x == y );
+//                 const uint32_t maxTile = __ffs(mask) - 1;
+//                 selectedMax = tile32.shfl(y, maxTile);
+//                 selectedBlock = tile32.shfl(selectedBlock, maxTile);
+//             }
+
+//             // generate and broadcast randomFloat
+//             float randomFloat = -1.f;
+//             if (tid == 0) {
+//                 randomFloat = randXOR(state + blockIdx.x);
+//             }
+//             randomFloat = tile32.shfl(randomFloat, 0);
+            
+//             const uint32_t probabilityId = selectedBlock * 32 + tid;
+//             if (probabilityId < cols) {
+//                 const uint32_t bitmask = tile32.ballot(randomFloat < p[probabilityId]); 
+//                 const uint32_t selected = __ffs(bitmask) - 1;
+
+//                 if (tid == selected) {
+//                     const uint32_t nextCity = selectedBlock * 32 + selected;
+//                     tabu[blockIdx.x * cols + s] = nextCity;
+//                     visited[nextCity] = 0;
+//                     *k = nextCity;
+//                 }
+//             }
+//         }
+//         __syncthreads();
+//     }
+// }
+
+#define FULL_MASK 0xFFFFFFFF
+__device__ __forceinline__
+float scanWarpFloat(const uint32_t tid, float x) {
+    #pragma unroll
+    for( uint32_t offset = 1 ; offset < 32 ; offset <<= 1 ) {
+        const float y = __shfl_up_sync(FULL_MASK, x, offset);
+        if(tid >= offset) x += y;
+    }
+    return x;
+}
+
 __global__
 void claculateTour(uint32_t * tabu,
                    const float * fitness,
@@ -109,93 +220,75 @@ void claculateTour(uint32_t * tabu,
                    curandStateXORWOW_t * state)
 {
     const uint32_t numberOfBlocks = (cols + 31) / 32;
+    const uint32_t alignedCols = numberOfBlocks * 32;
 
     extern __shared__ uint32_t smem[];
     float    * p       = (float *)    smem;
     uint32_t * k       = (uint32_t *) &p[cols];
-    float    * reduce  = (float *)    &k[1];
-    uint8_t * visited  = (uint8_t *)  &reduce[numberOfBlocks];
+    uint8_t * visited  = (uint8_t *)  &k[1]; 
 
-    thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
     const uint32_t tid = threadIdx.x;
+    const uint32_t bid = blockIdx.x;
 
     // initialize visited array
-    for (uint32_t i = tid; i < cols; i += blockDim.x) { 
-        visited[i] = 1;
+    for (uint32_t i = tid; i < cols; i += 32) { 
+        visited[i] = 1; // TODO: make p aligned to 32 elements 
     }
-    __syncthreads();
+    __syncwarp();
 
     // get random starting city and update visited and tabu
     if (tid == 0) {
-        const uint32_t kappa = cols * randXOR(state + blockIdx.x);
+        const uint32_t kappa = cols * randXOR(state + bid);
         *k = kappa;
         visited[kappa] = 0;
         tabu[blockIdx.x * cols] = kappa;
     }
-    __syncthreads();
+    
 
     for (uint32_t s = 1; s < cols; ++s) {
+        __syncwarp(); // sync warp once for tabu initialization and then for *k value update
         // get city from shared memory
         const uint32_t kappa = *k;
 
         // update probability values
-        for (uint32_t i = tid; i < cols; i += blockDim.x) { 
-            p[i] = fitness[kappa * cols + i] * visited[i];
+        for (uint32_t i = tid; i < cols; i += 32) { 
+            p[i] = fitness[kappa * cols + i] * visited[i];//TODO: make fitness aligned to 32 elements
         }
-        __syncthreads();
+        __syncwarp();
 
-        for (uint32_t blockId = tid / 32; blockId < numberOfBlocks; blockId += blockDim.x / 32) {
-            const uint32_t warpTid = tile32.thread_rank() + (blockId * 32);
-            
-            const float x = (warpTid < cols) ? p[warpTid] : 0.f;
-            const float y = scanTileFloat(tile32, x);
-            const float z = tile32.shfl(y, 31);
-            if (warpTid < cols) p[warpTid] = y / z;
-            if (tile32.thread_rank() == 0) reduce[blockId] = z;
+        float sum = 0.f;
+        for (uint32_t pid = tid; pid < alignedCols; pid += 32) { //TODO: when everything is aligned to 32 elements replace with for( uint32_t id = tid; tid < alignedCols; id += 32)            
+            const float x = (pid < cols ? p[pid] : 0.f); // TODO: make p aligned to 32 elements
+            const float y = sum + scanWarpFloat(tid, x);
+            if (pid < cols) p[pid] = y; // TODO: make p aligned to 32 elements
+            sum = __shfl_sync(FULL_MASK, y, 31);
         }
 
-        __syncthreads();
+        // generate and broadcast randomFloat
+        float randomFloat = -1.f;
+        if (tid == 0) {
+            randomFloat = randXOR(state + blockIdx.x);
+        }
+        randomFloat = __shfl_sync(FULL_MASK, randomFloat, 0);
 
-        if (tid < 32) {
-
-            uint32_t selectedBlock = 1234567890; // fake number just to be sure that will not appear somewere
-            float selectedMax = -1.f;
-
-            //TODO: verify if selectedBlock is correct when cols >= 1024
-            for (uint32_t stride = 0; stride < numberOfBlocks; stride += 32) {
-                const uint32_t warpTid = tid + stride;
-                const float x = (warpTid < numberOfBlocks) ? reduce[warpTid] : 0.f;
-                selectedMax = fmaxf(x, selectedMax);
-                selectedBlock = (x == selectedMax) ? warpTid : selectedBlock;
-
-                const float y = maxTileFloat(tile32, selectedMax);
-                const uint32_t mask = tile32.ballot( x == y );
-                const uint32_t maxTile = __ffs(mask) - 1;
-                selectedMax = tile32.shfl(y, maxTile);
-                selectedBlock = tile32.shfl(selectedBlock, maxTile);
-            }
-
-            // generate and broadcast randomFloat
-            float randomFloat = -1.f;
-            if (tid == 0) {
-                randomFloat = randXOR(state + blockIdx.x);
-            }
-            randomFloat = tile32.shfl(randomFloat, 0);
+        const float probability = randomFloat * sum;
+        for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
             
-            const uint32_t probabilityId = selectedBlock * 32 + tid;
-            if (probabilityId < cols) {
-                const uint32_t bitmask = tile32.ballot(randomFloat < p[probabilityId]); 
-                const uint32_t selected = __ffs(bitmask) - 1;
+            const float prevP = (pid == 0 ? 0.f : p[pid - 1]);
+            const float currP = p[pid];
+            const float magicProbability = (prevP - probability) * (currP - probability);
+            const uint32_t ballotMask = __ballot_sync(FULL_MASK, magicProbability <= 0.f);
+            const uint32_t winner = __ffs(ballotMask);
 
-                if (tid == selected) {
-                    const uint32_t nextCity = selectedBlock * 32 + selected;
-                    tabu[blockIdx.x * cols + s] = nextCity;
-                    visited[nextCity] = 0;
-                    *k = nextCity;
+            if (winner > 0) {
+                if (tid == winner - 1) {
+                    tabu[blockIdx.x * cols + s] = pid;
+                    visited[pid]= 0;
+                    *k = pid;
                 }
+                break;
             }
         }
-        __syncthreads();
     }
 }
 
@@ -451,8 +544,8 @@ int main(int argc, char * argv[]) {
     initCurand<<<gridAnt1D,    dimBlock1D>>>(state, seed, nAnts);
     initialize<<<gridMatrix2D, dimBlock2D>>>(distance, eta, pheromone, delta, valPheromone, nCities, nCities);
 
-    const dim3 tourGrid(nCities); // number of blocks
-    const dim3 tourBlock(128); // number of threads in a block
+    const dim3 tourGrid(nAnts); // number of blocks
+    const dim3 tourBlock(32); // number of threads in a block
     const uint32_t reduceElems = (nCities + 31) / 32;
     const uint32_t tourShared  = nCities      * sizeof(float)    + // p
                                  1            * sizeof(uint32_t) + // k
@@ -486,6 +579,8 @@ int main(int argc, char * argv[]) {
 
     cudaDeviceSynchronize();
     
+    // printMatrix("tabu", tabu, 1, nCities);
+
     stopAndPrintTimer();
     cout << (tsp->checkPath(bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
     cout << "bestPathLen: " << *bestPathLen << endl;
