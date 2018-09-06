@@ -1,7 +1,7 @@
-CXX             := g++ 
-CXX_FLAGS       := -O3 -g -std=c++14 -pedantic -Wall -Waligned-new=none 
-INCLUDES        :=-I . ~/Projects/fastflow/
-LD_FLAGS        := -pthread
+CXX			:= g++ 
+CXX_FLAGS	:= -O3 -g -std=c++14 -pedantic -Wall -Waligned-new=none 
+INCLUDES	:=-I . ~/Projects/fastflow/
+LD_FLAGS	:= -pthread
 
 OBJECTS_CPU = main.cpp ACO.o TSP.o AcoCpu.o AcoFF.o
 OBJECTS_GPU = GPUAco.cu ACO.o TSP.o
@@ -18,8 +18,8 @@ acocpu_san: $(OBJECTS_CPU)
 %.o: %.cxx
 	$(CXX) $(CXX_FLAGS) -c $(input) -o $(output)
 
-clean:  
-        rm -f acocpu acogpu *.o
+clean:
+	rm -f acocpu acogpu *.o
 
 # CXX 		= g++
 # CPP7 		= /usr/local/Cellar/gcc\@7/7.3.0/bin/c++-7
