@@ -167,26 +167,46 @@ public:
 	template <typename P>
 	int checkPath(P * path) {
 		
+		uint32_t success = 1;
+		uint32_t * duplicate = new uint32_t[dimension];
+
+		for (uint32_t i = 0; i < dimension; ++i) {
+			duplicate[i] = 0;
+		}
+
 		P from;
 		P to;
 		for (int i = 0; i < dimension - 1; ++i) {
+
 			from = path[i];
 			to = path[i + 1];
-			
+
+			duplicate[from] += 1;
+
 			if (from < 0) {
 				clog << "Illegal FROM city in position: " << i << "!"<< endl;
-				return 0;
+				success = 0;
 			}
 			if (to < 0) {
 				clog << "Illegal TO city in position: " << i + 1 << "!"<< endl;
-				return 0;
+				success = 0;
 			}
 			if (_edges(from, to) <= 0) {
 				clog << "Path impossibile: " << from << " -> " << to << endl;
-				return 0;
+				success = 0;
 			}
 		}
-		return 1;
+
+		for (uint32_t i = 0; i < dimension; ++i) {
+			if (duplicate[i] > 1) {
+				success = 0;
+				clog << "Duplicate city: " << i << endl;
+  			}
+		}
+
+		delete[] duplicate;
+
+		return success;
 	}
 	
 	template <typename P>
