@@ -10,44 +10,39 @@
 
 using namespace std;
 
-enum ERROR {
-	EXIT_PARSE_INT = 32,
-	EXIT_PARSE_FLOAT,
-	EXIT_PARSE_STRING,
-    EXIT_LOAD_TSP_FILE,
-    EXIT_EDGE_WEIGHT_TYPE,
-    EXIT_EDGE_WEIGHT_FORMAT,
-    EXIT_NODE_COORD_TYPE
-};
 
-#define fitness(a, b)	aco->fitness[a * aco->nCities + b]
-#define p(a, b)			aco->p[a * aco->nCities + b]
-#define visited(a, b)	aco->visited[a * aco->nCities + b]
-#define tabu(a, b)		aco->tabu[a * aco->nCities + b]
 
-#define edges(a, b)		tsp->edges[a * tsp->dimension + b]
+// #define fitness(a, b)	aco->fitness[a * aco->nCities + b]
+// #define p(a, b)			aco->p[a * aco->nCities + b]
+// #define visited(a, b)	aco->visited[a * aco->nCities + b]
+// #define tabu(a, b)		aco->tabu[a * aco->nCities + b]
+// #define delta(a, b)     aco->delta[a * tsp->dimension + b]
+// #define edges(a, b)		tsp->edges[a * tsp->dimension + b]
 
 
 #define MAX_LEN 256
 
 template <typename T>
-T parseArg(char * arg) {
+inline T parseArg(char * arg) {
     clog << "Error: type not supported!" << endl;
 }
 
-template<> uint32_t parseArg(char * arg) {
+template<>
+inline uint32_t parseArg(char * arg) {
     return atoi(arg);
 }
 
-template<> float parseArg(char * arg) {
+template<>
+inline float parseArg(char * arg) {
     return atof(arg);
 }
 
-template<> double parseArg(char * arg) {
+template<>
+inline double parseArg(char * arg) {
     return atof(arg);
 }
 
-void intArg(int argc, char * argv[], int i, int * val) {
+inline void intArg(int argc, char * argv[], int i, int * val) {
     if (argc > i) {
         *val = atoi(argv[i]);
         return;
@@ -57,7 +52,7 @@ void intArg(int argc, char * argv[], int i, int * val) {
 }
 
 template <typename T>
-void fltArg(int argc, char * argv[], int i, T * val) {
+inline void fltArg(int argc, char * argv[], int i, T * val) {
     if (argc > i) {
         *val = atof(argv[i]);
         return;
@@ -66,7 +61,7 @@ void fltArg(int argc, char * argv[], int i, T * val) {
     exit(EXIT_PARSE_FLOAT);
 }
 
-void strArg(int argc, char * argv[], int i, char * val) {
+inline void strArg(int argc, char * argv[], int i, char * val) {
     if (argc > i) {
         strcpy(val, argv[i]);
         return;
@@ -75,7 +70,8 @@ void strArg(int argc, char * argv[], int i, char * val) {
     exit(EXIT_PARSE_STRING);
 }
 
-template <typename T> void printMatrix(string name, T * matrix, int rows, int cols) {
+template <typename T>
+inline void printMatrix(string name, T * matrix, int rows, int cols) {
 
     cout << "**** " << name << " ****" << endl;
     for (int i = 0; i < rows; ++i) {
@@ -86,37 +82,77 @@ template <typename T> void printMatrix(string name, T * matrix, int rows, int co
     }
 }
 
+template <typename T>
+inline void printMatrixV(const string name,
+                  const std::vector<T> & matrix,
+                  const uint32_t rows,
+                  const uint32_t cols,
+                  const uint32_t precision)
+{
+    std::cout << "**** " << name << " ****" << std::endl;
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            std::cout << std::setw(precision) << std::setprecision(precision) << std::fixed << matrix[i * cols + j] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+template <typename T>
+inline bool compareArray(const string & name, T * left, T * right, uint32_t elems) {
+    for (int i = 0; i < elems; ++i) {
+        if (left[i] != right[i]) {
+            std::clog << "Error comparing array " << name << " at index ( " << i << " )" << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename T>
+inline bool compareMatrix(const string & name, T * left, T * right, uint32_t rows, uint32_t cols) {
+    for (uint32_t i = 0; i < rows; ++i) {
+        for (uint32_t j = 0; j < cols; ++j) {
+            if (left[i * cols + j] != right[i * cols + j]) {
+                std::clog << "Error comparing matrix " << name << " at index ( " << i << ", " << j << " )" << std::endl;
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static std::chrono::high_resolution_clock::time_point startPoint;
 static std::chrono::high_resolution_clock::time_point endPoint;
 
-void startTimer() {
+inline void startTimer() {
     startPoint = std::chrono::high_resolution_clock::now();
 }
 
-void stopTimer() {
+inline void stopTimer() {
     endPoint = std::chrono::high_resolution_clock::now();
 }
 
-long getTimerMS() {
+inline long getTimerMS() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(endPoint - startPoint).count();
 }
 
-long getTimerUS() {
+inline long getTimerUS() {
     return std::chrono::duration_cast<std::chrono::microseconds>(endPoint - startPoint).count();
 }
 
-void printTimer() {
+inline void printTimer() {
     long msec = getTimerMS();
     long usec = getTimerUS();
     cout << "Compute time: " << msec << " ms " << usec << " usec " << endl;
 }
 
-void stopAndPrintTimer() {
+inline void stopAndPrintTimer() {
     stopTimer();
     printTimer();
 }
 
-void stopAndPrintTimer(string name) {
+inline void stopAndPrintTimer(string name) {
     stopTimer();
     cout << name;
     printTimer();

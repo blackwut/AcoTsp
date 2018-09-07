@@ -1,177 +1,252 @@
+#ifndef __ACO_CPU_CPP__
+#define __ACO_CPU_CPP__
+
+#include <vector>
+#include <limits>
 #include <random>
-#include <climits>
 
-#include "ACO.cpp"
 #include "TSP.cpp"
+#include "common.hpp"
 
-using namespace std;
+static uint64_t randomSeed = time(0);
+
+template <typename T>
+struct Ant {
+    const uint32_t nCities;
+    std::vector<uint32_t> tabu;
+    std::vector<uint8_t> visited;
+    std::vector<T> p;
+    T tourLength;
+
+    T nextRandom() {
+        static std::mt19937 generator(randomSeed);
+        static std::uniform_real_distribution<T> distribution(0.0f, 1.0f);
+        return distribution(generator);
+    }
+
+    Ant(const uint32_t nCities):
+    nCities(nCities),
+    tabu(nCities),
+    visited(nCities),
+    p(nCities),
+    tourLength(0.0) 
+    {}
+
+    void resetVisited() {
+        for (uint8_t & v : visited) {
+            v = 1;
+        }
+    }
+
+    void updateTourLength(const std::vector<T> & edges) {
+
+        tourLength = 0.0;
+        auto bTabu = tabu.begin();
+        const auto constbTabu = bTabu;
+
+        while ( bTabu != tabu.end() - 1 ) {
+            const uint32_t from = *(bTabu++);
+            const uint32_t to   = *(bTabu);
+            tourLength += edges[from * nCities + to];
+        }
+        const uint32_t from = *(bTabu - 1);
+        const uint32_t to   = *(constbTabu);
+        tourLength += edges[from * nCities + to];
+    }
+
+    void constructTour(const std::vector<T> & fitness, const std::vector<T> & edges) {
+        
+        resetVisited();
+
+        uint32_t k = nextRandom() * nCities;
+        visited[k] = 0;
+        tabu[0]    = k;
+
+        for (uint32_t s = 1; s < nCities; ++s) {
+
+            T sum = 0.f;
+
+            auto bP       = p.begin();
+            auto bVisited = visited.begin();
+            auto bFitness = fitness.begin() + k * nCities;
+
+            while ( bP != p.end() ) {
+                auto &pVal       = *(bP++);
+                const auto &visitedVal = *(bVisited++);
+                const auto &fitnessVal = *(bFitness++);
+
+                sum += fitnessVal * visitedVal;
+                pVal = sum;
+            }
+
+            const T r = nextRandom() * sum;
+            bP = p.begin();
+            while ( bP != p.end() ) {
+                const T pVal = *(bP++);
+                if (pVal >= r) {
+                    k          = bP - p.begin() - 1;
+                    tabu[s]    = k;
+                    visited[k] = false;
+                    break;
+                }
+            }
+        }
+
+        updateTourLength(edges);
+    }
+
+    inline bool operator< (const Ant<T> & ant) const {
+        return tourLength < ant.tourLength;
+    }
+
+};
 
 template <typename T>
 class AcoCpu {
-	
+    
 private:
-	
-	ACO<T> * aco;
-	TSP<T> * tsp;
-	
-	int epoch;
-	unsigned int seed = 435;
-	
-	T nextRandom() {
-		static std::mt19937 generator(seed);
-		static std::uniform_real_distribution<T> distribution(0.0f, 1.0f);
-		return distribution(generator);
-	}
-	
-	void initPheromone(T initialPheromone) {
-		for (int i = 0; i < aco->elems; ++i) {
-			aco->pheromone[i] = initialPheromone;
-		}
-	}
-	
-	void initEta() {
-		for (int i = 0; i < aco->elems; ++i) {
-			aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
-		}
-	}
-	
-	void calcfitness() {
-		for (int i = 0; i < aco->elems; ++i) {
-			aco->fitness[i] = pow(aco->pheromone[i], aco->alpha) * pow(aco->eta[i], aco->beta);
-		}
-	}
-	
-	void calcTour() {
-		
-		for (int i = 0; i < aco->nAnts * aco->nCities; ++i) {
-			aco->visited[i] = 1;
-		}
-		
-		for (int id = 0; id < aco->nAnts; ++id) {
-			
-			int k = nextRandom() * aco->nAnts;
-			visited(id, k) = 0;
-			tabu(id, 0) = k;
-			
-			for (int s = 1; s < aco->nCities; ++s) {
-				
-				T sum = 0.0f;
-				const int i = k;
-				for (int j = 0; j < aco->nCities; ++j) {
-					sum += fitness(i, j) * visited(id, j);
-					p(id, j) = sum;
-				}
-				
-				const T r = nextRandom() * sum;
-				k = -1;
-				for (int j = 0; j < aco->nCities; ++j) {
-					if ( k == -1 && p(id, j) >= r ) {
-						k = j;
-						break;
-					}
-				}
-				
-				if ( k == -1 ) {
-					cout << "Huston we have a problem!" << endl;
-					k = aco->nCities - 1;
-				}
-				
-				visited(id, k) = 0;
-				tabu(id, s) = k;
-			}
-			
-			T length = 0.0f;
-			int from;
-			int to;
-			for (int i = 0; i < tsp->dimension - 1; ++i) {
-				from = tabu(id, i);
-				to = tabu(id, i + 1);
-				length += edges(from, to);
-			}
-			from = tabu(id, aco->nCities - 1);
-			to = tabu(id, 0);
-			length += edges(from, to);
-			
-			aco->lengths[id] = length;
-		}
-	}
-	
-	void calcBestTour() {
-		for (int i = 0; i < aco->nAnts; ++i) {
-			if (aco->bestTourLen > aco->lengths[i]) {
-				aco->bestTourLen = aco->lengths[i];
-			}
-		}
-		
-		for (int i = 0; i < aco->nAnts; ++i) {
-			if (aco->lengths[i] == aco->bestTourLen) {
-				for (int j = 0; j < tsp->dimension; ++j) {
-					aco->bestTour[j] = tabu(i, j);
-				}
-				break;
-			}
-		}
-	}
-	
-	void clearDelta() {
-		for (int i = 0; i < tsp->dimension * tsp->dimension; ++i) {
-			aco->delta[i] = 0.0f;
-		}
-	}
-	
-	void updateDelta() {
-		int from;
-		int to;
-		for (int i = 0; i < aco->nAnts; ++i) {
-			for (int j = 0; j < tsp->dimension - 1; ++j) {
-				from = tabu(i , j);
-				to = tabu(i, j + 1);
-				aco->delta[from * tsp->dimension + to] += aco->q / aco->lengths[i];
-			}
-			from = tabu(i, aco->nCities - 1);
-			to = tabu(i, 0);
-			aco->delta[from * tsp->dimension + to] += aco->q / aco->lengths[i];
-		}
-	}
-	
-	void updatePheromone() {
-		for (int i = 0; i < tsp->dimension * tsp->dimension; ++i) {
-			aco->pheromone[i] = aco->pheromone[i] * (1 - aco->rho) + aco->delta[i];
-		}
-	}
-	
+    
+    TSP<T> & tsp;
+    const uint32_t nAnts;
+    const uint32_t nCities;
+    const T alpha;
+    const T beta;
+    const T q;
+    const T rho;
+    const uint32_t maxEpoch;
+    std::vector< Ant<T> > ants;
+    std::vector<T> edges;
+    std::vector<T> eta;
+    std::vector<T> pheromone;
+    std::vector<T> delta;
+    std::vector<T> fitness;
+
+    std::vector<uint32_t> bestTour;
+    T bestTourLength;
+    
+    void initEta() {
+        auto bEta   = eta.begin();
+        auto bEdges = edges.begin();
+        while ( bEta != eta.end() ) {
+            T & etaVal = *(bEta++);
+            const T & edgeVal = *(bEdges++);
+            
+            etaVal = (edgeVal == 0.0 ? 0.0 : 1.0 / edgeVal);
+        }
+    }
+
+    void calcFitness() {
+
+        auto bFitness   = fitness.begin();
+        auto bPheromone = pheromone.begin();
+        auto bEta       = eta.begin();
+
+        while ( bFitness != fitness.end() ) {
+            T & fitVal = *(bFitness++);
+            const T & pheromoneVal = *(bPheromone++);
+            const T & etaVal = *(bEta++);
+            fitVal = pow(pheromoneVal, alpha) * pow(etaVal, beta);
+        }
+    }
+    
+    void calcTour() {
+        for (Ant<T> & ant : ants) {
+            ant.constructTour(fitness, edges);
+        }
+    }
+    
+    void updateBestTour() {
+        const Ant<T> & bestAnt = *std::min_element(ants.begin(), ants.end());
+        std::copy ( bestAnt.tabu.begin(), bestAnt.tabu.end(), bestTour.begin() );
+        bestTourLength = bestAnt.tourLength;
+    }
+     
+    void updateDelta() {
+
+        for (T & d : delta) {
+            d = 0.0;
+        }
+
+        for (Ant<T> & ant : ants) {
+
+            const float tau = q / ant.tourLength;
+
+            auto bTabu = ant.tabu.begin();
+            const auto constbTabu = bTabu;
+
+            while ( bTabu != ant.tabu.end() - 1) {
+                const uint32_t from = *(bTabu++);
+                const uint32_t to   = *(bTabu);
+                delta[from * nCities + to] += tau;
+            }
+            const uint32_t from = *(bTabu - 1);
+            const uint32_t to   = *(constbTabu);
+            delta[from * nCities + to] += tau;
+        }
+    }
+    
+    void updatePheromone() {
+
+        auto bPheromone = pheromone.begin();
+        auto bDelta     = delta.begin();
+
+        while ( bPheromone != pheromone.end() ) {
+            T & pheromoneVal = *(bPheromone++);
+            T & deltaVal     = *(bDelta++);
+
+            pheromoneVal = pheromoneVal * rho + deltaVal;
+        }
+    }
+    
 public:
-	
-	AcoCpu(ACO<T> * aco, TSP<T> * tsp)
-	: aco(aco), tsp(tsp)
-	{
-		epoch = 0;
-		seed = (unsigned int) time(0);
-	}
-	
-	void nextIteration() {
-		epoch++;
-		calcfitness();
-		calcTour();
-		calcBestTour();
-		clearDelta();
-		updateDelta();
-		updatePheromone();
-	}
-	
-	void solve() {
-		
-		aco->bestTourLen = INT_MAX;
-		epoch = 0;
-		
-		T initialPheromone = 1.0f / tsp->dimension;
-		initPheromone(initialPheromone);
-		initEta();
-		
-		do {
-			nextIteration();
-		} while (epoch < aco->maxEpoch);
-	}
-	
-	~AcoCpu(){}
+    
+    AcoCpu(TSP<T> & tsp, uint32_t nAnts, uint32_t nCities, T alpha, T beta, T q, T rho, uint32_t maxEpoch):
+    tsp(tsp),
+    nAnts(nAnts),
+    nCities(nCities),
+    alpha(alpha),
+    beta(beta),
+    q(q),
+    rho(1.0 - rho),
+    maxEpoch(maxEpoch),
+    ants(nAnts, Ant<T>(nCities)),
+    edges(nCities * nCities),
+    eta(nCities * nCities),
+    pheromone(nCities * nCities, 1.0 / nCities),
+    delta(nCities * nCities),
+    fitness(nCities * nCities),
+    bestTour(nCities)
+    {
+        bestTourLength = std::numeric_limits<T>::max();
+
+        for (uint32_t i = 0; i < nCities * nCities; ++i) {
+            edges[i] = tsp.edges[i];
+        }
+    }
+
+    void solve() {
+        
+        uint32_t epoch = 0;
+        initEta();
+        
+        do {
+            calcFitness();
+            calcTour();
+            updateBestTour();
+            updateDelta();
+            updatePheromone();
+        } while ( ++epoch < maxEpoch );
+    }
+
+    const std::vector<uint32_t> & getBestTour() const {
+        return bestTour;
+    }
+
+    T getBestTourLength() {
+        return bestTourLength;
+    }
+    
+    ~AcoCpu(){}
 };
+
+#endif

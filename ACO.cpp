@@ -1,5 +1,5 @@
-#ifndef __ACO_HPP__
-#define __ACO_HPP__
+#ifndef __ACO_CPP__
+#define __ACO_CPP__
 
 #include <iostream>
 #include <atomic>
@@ -12,14 +12,14 @@ class ACO {
 private:
 	
 public:
-	int nAnts;
-	int nCities;
-	int elems;
+	uint32_t nAnts;
+	uint32_t nCities;
+	uint32_t elems;
 	T alpha;
 	T beta;
 	T q;
 	T rho;
-	int maxEpoch;
+	uint32_t maxEpoch;
 	bool atomicDelta;
 	
 	T * eta;
@@ -29,14 +29,14 @@ public:
 	T * pheromone;
 	T * p;
 	
-	int * visited;
-	int * tabu;
+	uint8_t * visited;
+	uint32_t * tabu;
 	T * lengths;
 	
 	T bestTourLen;
-	int * bestTour;
+	uint32_t * bestTour;
 	
-	ACO(int nAnts, int nCities, T alpha, T beta, T q, T rho, int maxEpoch, bool atomicDelta) :
+	ACO(uint32_t nAnts, uint32_t nCities, T alpha, T beta, T q, T rho, uint32_t maxEpoch, bool atomicDelta) :
 	nAnts(nAnts), nCities(nCities), elems(nCities * nCities), alpha(alpha), beta(beta), q(q), rho(rho), maxEpoch(maxEpoch), atomicDelta(atomicDelta) {
 		
 		eta = new T[elems];
@@ -48,11 +48,11 @@ public:
 		
 		pheromone = new T[elems];
 		
-		visited = new int[nAnts * nCities];
-		tabu = new int[nAnts * nCities];
+		v = new uint8_t[nAnts * nCities];
+		tabu = new uint32_t[nAnts * nCities];
 		p = new T[nAnts * nCities];
 		lengths = new T[nAnts];
-		bestTour = new int[nCities];
+		bestTour = new uint32_t[nCities];
 	}
 	
 	void printBestTour() {

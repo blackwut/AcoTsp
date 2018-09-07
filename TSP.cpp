@@ -1,12 +1,11 @@
-#ifndef __TSP_HPP__
-#define __TSP_HPP__
+#ifndef __TSP_CPP__
+#define __TSP_CPP__
 
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <cmath>
-
-#include "common.hpp"
+#include <vector>
 
 using namespace std;
 
@@ -25,6 +24,16 @@ using namespace std;
 #define MAX_2D "MAX_2D"
 #define FULL_MATRIX "FULL_MATRIX"
 #define UPPER_ROW "UPPER_ROW"
+
+enum ERROR {
+	EXIT_PARSE_INT = 32,
+	EXIT_PARSE_FLOAT,
+	EXIT_PARSE_STRING,
+    EXIT_LOAD_TSP_FILE,
+    EXIT_EDGE_WEIGHT_TYPE,
+    EXIT_EDGE_WEIGHT_FORMAT,
+    EXIT_NODE_COORD_TYPE
+};
 
 #define READ(tag, val)   \
 if ( buffer == tag":")   \
@@ -164,6 +173,50 @@ public:
 		in.close();
 	}
 	
+
+	//TODO: DA RIVEDERE COMPLETAMENTE
+	int checkPath(const std::vector<uint32_t> & path) const {
+		
+		uint32_t success = 1;
+		uint32_t * duplicate = new uint32_t[dimension];
+
+		for (uint32_t i = 0; i < dimension; ++i) {
+			duplicate[i] = 0;
+		}
+
+		for (uint32_t i = 0; i < dimension - 1; ++i) {
+
+			const uint32_t from = path[i];
+			const uint32_t to   = path[i + 1];
+
+			duplicate[from] += 1;
+
+			if (from >= dimension) {
+				clog << "Illegal FROM city in position: " << i << "!"<< endl;
+				success = 0;
+			}
+			if (success == 0 && to >= dimension) {
+				clog << "Illegal TO city in position: " << i + 1 << "!"<< endl;
+				success = 0;
+			}
+			if (success == 0 && _edges(from, to) <= 0) {
+				clog << "Path impossibile: " << from << " -> " << to << endl;
+				success = 0;
+			}
+		}
+
+		for (uint32_t i = 0; i < dimension; ++i) {
+			if (duplicate[i] > 1) {
+				success = 0;
+				clog << "Duplicate city: " << i << endl;
+  			}
+		}
+
+		delete[] duplicate;
+
+		return success;
+	}
+
 	template <typename P>
 	int checkPath(P * path) {
 		
@@ -251,4 +304,3 @@ public:
 };
 
 #endif
-
