@@ -23,6 +23,7 @@
 #define EUC_2D              "EUC_2D"
 #define MAN_2D              "MAN_2D"
 #define MAX_2D              "MAX_2D"
+#define ATT                 "ATT"
 #define FULL_MATRIX         "FULL_MATRIX"
 #define UPPER_ROW           "UPPER_ROW"
 
@@ -75,8 +76,8 @@ private:
             for (uint32_t i = 0; i < nCities; ++i) {
                 for (uint32_t j = 0; j < nCities; ++j) {
                     
-                    T xd = cities[i].x - cities[j].x;
-                    T yd = cities[i].y - cities[j].y;
+                    const T xd = cities[i].x - cities[j].x;
+                    const T yd = cities[i].y - cities[j].y;
 
                     if ( edgeWeightType == EUC_2D ) {
                         _edges(i, j) = round( sqrt(xd * xd + yd * yd) );
@@ -84,6 +85,10 @@ private:
                         _edges(i, j) = round( abs(xd) + abs(yd) );
                     } else if ( edgeWeightType == MAX_2D ) {
                         _edges(i, j) = max( round(abs(xd)), round(abs(yd)) );
+                    } else if ( edgeWeightType == ATT ) {
+                        const T rij = sqrt( (xd * xd + yd * yd) / 10.0 );
+                        const T tij = round( rij );
+                        _edges(i, j) = tij + (tij < rij);
                     } else {
                         std::clog << EDGE_WEIGHT_TYPE << ": " << edgeWeightType << " not supported!" << std::endl;
                         exit(EXIT_EDGE_WEIGHT_TYPE);
