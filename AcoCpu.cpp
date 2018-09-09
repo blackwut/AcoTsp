@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <vector>
+#include <algorithm>
 
 #include "Environment.cpp"
 #include "Parameters.cpp"

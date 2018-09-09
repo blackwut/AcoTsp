@@ -53,11 +53,11 @@ inline double parseArg(char * arg) {
 }
 
 template <typename T>
-inline void printMatrix(string name, T * matrix, int rows, int cols) {
+inline void printMatrix(string name, T * matrix, uint32_t rows, uint32_t cols) {
 
     cout << "**** " << name << " ****" << endl;
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
+    for (uint32_t i = 0; i < rows; ++i) {
+        for (uint32_t j = 0; j < cols; ++j) {
             cout << setw(3) << setprecision(3) << fixed << matrix[i * cols + j] << " ";
         }
         cout << endl;
@@ -72,8 +72,8 @@ inline void printMatrixV(const string name,
                   const uint32_t precision)
 {
     std::cout << "**** " << name << " ****" << std::endl;
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
+    for (uint32_t i = 0; i < rows; ++i) {
+        for (uint32_t j = 0; j < cols; ++j) {
             std::cout << std::setw(precision) << std::setprecision(precision) << std::fixed << matrix[i * cols + j] << " ";
         }
         std::cout << std::endl;
@@ -82,7 +82,7 @@ inline void printMatrixV(const string name,
 
 template <typename T>
 inline bool compareArray(const string & name, T * left, T * right, uint32_t elems) {
-    for (int i = 0; i < elems; ++i) {
+    for (uint32_t i = 0; i < elems; ++i) {
         if (left[i] != right[i]) {
             std::clog << "Error comparing array " << name << " at index ( " << i << " )" << std::endl;
             return false;

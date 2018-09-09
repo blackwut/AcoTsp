@@ -205,7 +205,7 @@ private:
     {
         farmTour = new ff_Farm<>( [&]() {
             std::vector< unique_ptr<ff_node> > workers;
-            for(int i = 0; i < farmWorkers; ++i)
+            for(uint32_t i = 0; i < farmWorkers; ++i)
                 workers.push_back( make_unique< Worker<T, D> >(params, env) );
             return workers;
         }());
