@@ -17,10 +17,10 @@
 
 CC			= g++
 CPPFLAGS	= -Wall -pedantic -std=c++14 -O3
-INCLUDES	= -I. -I~/Projects/fastflow/
+INCLUDES	= -I . -I ~/Projects/fastflow
 LIBS		= -pthread
 
-SRCS	= main.cpp TSP.cpp AcoCpu.cpp
+SRCS	= main.cpp TSP.cpp Environment.cpp Parameters.cpp Ant.cpp AcoCpu.cpp
 OBJS	= $(SRCS:.cpp=.o)
 MAIN	= acocpu
 
@@ -31,7 +31,7 @@ $(MAIN): $(OBJS)
 # it uses automatic variables $<: the name of the prerequisite of
 # the rule(a .c file) and $@: the name of the target of the rule (a .o file) 
 # (see the gnu make manual section about automatic variables)
-.c.o:
+.cpp.o:
 	$(CC) $(CPPFLAGS) $(INCLUDES) -c $<  -o $@
 
 # %.o: %.cxx

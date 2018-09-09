@@ -2,8 +2,10 @@
 #include <cmath>
 
 #include "AcoCpu.cpp"
-// #include "AcoFF.cpp"
+#include "AcoFF.cpp"
 #include "TSP.cpp"
+#include "Parameters.cpp"
+#include "Environment.cpp"
 #include "common.hpp"
 
 using namespace std;
@@ -12,82 +14,87 @@ using namespace std;
 #define D_TYPE float
 #endif
 
+#define LOG_SEP " "
+
 int main(int argc, char * argv[]) {
 
     char * path     = new char[MAX_LEN];
-    D_TYPE alpha    = 4.0f;
-    D_TYPE beta     = 2.0f;
-    D_TYPE q        = 55.0f;
-    D_TYPE rho      = 0.8f;
-    int maxEpoch    = 30;
-    int mapWorkers  = 0;
-    int farmWorkers = 0;  
+    D_TYPE alpha    = 1.0;
+    D_TYPE beta     = 2.0;
+    D_TYPE q        = 1.0;
+    D_TYPE rho      = 0.5;
+    uint32_t maxEpoch    = 10;
+    uint32_t mapWorkers  = 0;
+    uint32_t farmWorkers = 0;  
 
-    if (argc < 7) {
+    if (argc < 7 || argc == 8) {
         cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpoch [mapWorkers farmWorkers]" << endl;
-        exit(-1);
+        exit(EXIT_ARGUMENTS_NUMBER);
     }
 
     argc--;
     argv++;
-    int args = 0;
-    strArg(argc, argv, args++, path);
-    fltArg(argc, argv, args++, &alpha);
-    fltArg(argc, argv, args++, &beta);
-    fltArg(argc, argv, args++, &q);
-    fltArg(argc, argv, args++, &rho);
-    intArg(argc, argv, args++, &maxEpoch);
-    if (argc >= 7) intArg(argc, argv, args++, &mapWorkers);
-    if (argc >= 7) intArg(argc, argv, args++, &farmWorkers);
+    path     = argv[0];
+    alpha    = parseArg<float>   (argv[1]);
+    beta     = parseArg<float>   (argv[2]);
+    q        = parseArg<float>   (argv[3]);
+    rho      = parseArg<float>   (argv[4]);
+    maxEpoch = parseArg<uint32_t>(argv[5]);
+
+    if (argc > 7) {
+        mapWorkers  = parseArg<uint32_t>(argv[6]);
+        farmWorkers = parseArg<uint32_t>(argv[7]);
+    }
 
     TSP<D_TYPE> tsp(path);
+    Parameters<D_TYPE> params(alpha, beta, q, rho, maxEpoch);
 
-    cout << "***** ACO CPU *****" << endl;
-    startTimer();
-    AcoCpu<D_TYPE> acocpu(tsp, tsp.dimension, tsp.dimension, alpha, beta, q, rho, maxEpoch);
-    acocpu.solve();
-    stopAndPrintTimer();
+    bool parallelCondition = mapWorkers > 0 && farmWorkers > 0;
 
-    // int parallelCondition = mapWorkers > 0 && farmWorkers > 0;
+    if (!parallelCondition) {
+        cout << "***** ACO CPU *****" << endl;
+        Environment<D_TYPE, D_TYPE> env(tsp.getNCities(), tsp.getNCities(), tsp.getEdges());
+        AcoCpu<D_TYPE, D_TYPE> acocpu(params, env);
 
-    // 
-    // ACO<D_TYPE> * aco = new ACO<D_TYPE>(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch, parallelCondition);
+        startTimer();
+        acocpu.solve();
+        stopAndPrintTimer();
 
-    // if (!parallelCondition) {
-    //     cout << "***** ACO CPU *****" << endl;
-    //     AcoCpu<D_TYPE> acocpu(aco, tsp);
+        printMatrixV("bestTour", env.getBestTour(), 1, env.nCities, 0);
 
-    //     startTimer();
-    //     acocpu.solve();
-    //     stopAndPrintTimer();
-    // } else {
+        clog << " *** " << LOG_SEP;
+        clog << tsp.getName() << LOG_SEP;
+        clog << mapWorkers << LOG_SEP;
+        clog << farmWorkers << LOG_SEP;
+        clog << maxEpoch << LOG_SEP;
+        clog << getTimerMS() << LOG_SEP;
+        clog << getTimerUS() << LOG_SEP;
+        clog << env.getBestTourLength() << LOG_SEP;
+        clog << ( ! tsp.checkPath(env.getBestTour()) ? "Y" : "N");
+        clog << endl;
+    
+    } else {
 
-    //     cout << "***** ACO FastFlow *****" << endl;
-    //     AcoFF<D_TYPE> acoff(aco, tsp, mapWorkers, farmWorkers);
-    //     startTimer();
-    //     acoff.solve();
-    //     stopAndPrintTimer();
-    // }
+        cout << "***** ACO FastFlow *****" << endl;
+        Environment< D_TYPE, std::atomic<D_TYPE> > env(tsp.getNCities(), tsp.getNCities(), tsp.getEdges());
+        AcoFF< D_TYPE, std::atomic<D_TYPE> > acoff(params, env, mapWorkers, farmWorkers);
+        startTimer();
+        acoff.solve();
+        stopAndPrintTimer();
 
-    // if ( tsp->checkPath(aco->bestTour) ) {
-    //   aco->printBestTour();
-    // }
+        printMatrixV("bestTour", env.getBestTour(), 1, env.nCities, 0);
 
-    printMatrixV("bestTour", acocpu.getBestTour(), 1, tsp.dimension, 0);
-
-#define LOG_SEP " "
-    clog << " *** " << LOG_SEP;
-    clog << tsp.getName() << LOG_SEP;
-    clog << mapWorkers << LOG_SEP;
-    clog << farmWorkers << LOG_SEP;
-    clog << maxEpoch << LOG_SEP;
-    clog << getTimerMS() << LOG_SEP;
-    clog << getTimerUS() << LOG_SEP;
-    clog << acocpu.getBestTourLength() << LOG_SEP;
-    clog << (tsp.checkPath(acocpu.getBestTour()) == 1 ? "Y" : "N");
-    clog << endl;
-
-  delete[] path;
+        clog << " *** " << LOG_SEP;
+        clog << tsp.getName() << LOG_SEP;
+        clog << mapWorkers << LOG_SEP;
+        clog << farmWorkers << LOG_SEP;
+        clog << maxEpoch << LOG_SEP;
+        clog << getTimerMS() << LOG_SEP;
+        clog << getTimerUS() << LOG_SEP;
+        clog << env.getBestTourLength() << LOG_SEP;
+        clog << ( ! tsp.checkPath(env.getBestTour()) ? "Y" : "N");
+        clog << endl;
+    }
 
   return 0;
 }

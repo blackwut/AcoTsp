@@ -2,14 +2,26 @@
 #define __COMMON_HPP__
 
 #include <iostream>
-#include <string>
-#include <cstring>
 #include <iomanip>
+#include <stdint.h>
+#include <cstring>
+#include <string>
 #include <ctime>
 #include <chrono>
 
 using namespace std;
 
+#define MAX_LEN 256
+static uint64_t randomSeed = time(0);
+
+enum ERROR {
+    EXIT_ARGUMENTS_NUMBER = -1,
+    EXIT_PARSE_ARG = -32,
+    EXIT_LOAD_TSP_FILE,
+    EXIT_EDGE_WEIGHT_TYPE,
+    EXIT_EDGE_WEIGHT_FORMAT,
+    EXIT_NODE_COORD_TYPE
+};
 
 
 // #define fitness(a, b)	aco->fitness[a * aco->nCities + b]
@@ -19,12 +31,10 @@ using namespace std;
 // #define delta(a, b)     aco->delta[a * tsp->dimension + b]
 // #define edges(a, b)		tsp->edges[a * tsp->dimension + b]
 
-
-#define MAX_LEN 256
-
 template <typename T>
 inline T parseArg(char * arg) {
     clog << "Error: type not supported!" << endl;
+    exit(EXIT_PARSE_ARG);
 }
 
 template<>
@@ -40,34 +50,6 @@ inline float parseArg(char * arg) {
 template<>
 inline double parseArg(char * arg) {
     return atof(arg);
-}
-
-inline void intArg(int argc, char * argv[], int i, int * val) {
-    if (argc > i) {
-        *val = atoi(argv[i]);
-        return;
-    }
-    clog << "Error while parsing argv[" << i << "] int value" << endl; 
-    exit(EXIT_PARSE_INT);
-}
-
-template <typename T>
-inline void fltArg(int argc, char * argv[], int i, T * val) {
-    if (argc > i) {
-        *val = atof(argv[i]);
-        return;
-    }
-    clog << "Error while parsing argv[" << i << "] float value" << endl; 
-    exit(EXIT_PARSE_FLOAT);
-}
-
-inline void strArg(int argc, char * argv[], int i, char * val) {
-    if (argc > i) {
-        strcpy(val, argv[i]);
-        return;
-    }
-    clog << "Error while parsing argv[" << i << "] string" << endl; 
-    exit(EXIT_PARSE_STRING);
 }
 
 template <typename T>
