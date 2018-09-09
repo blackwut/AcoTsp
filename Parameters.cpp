@@ -22,8 +22,7 @@ public:
     q(q),
     rho(1.0 - rho),
     maxEpoch(maxEpoch)
-    {
-    }
+    {}
 };
 
 #endif

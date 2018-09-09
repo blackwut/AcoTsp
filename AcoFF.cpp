@@ -87,10 +87,12 @@ struct Worker: ff_node_t< Ant<T> > {
             const uint32_t from = *(bTabu++);
             const uint32_t to   = *(bTabu);
             atomic_addf( &env.delta[from * env.nCities + to], tau );
+            atomic_addf( &env.delta[to * env.nCities + from], tau );
         }
         const uint32_t from = *(bTabu);
         const uint32_t to   = *(constbTabu);
         atomic_addf( &env.delta[from * env.nCities + to], tau );
+        atomic_addf( &env.delta[to * env.nCities + from], tau );
 
         return ant;
     }

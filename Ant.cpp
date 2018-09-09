@@ -60,7 +60,7 @@ private:
                 if (pVal >= r) {
                     k          = bP - p.begin() - 1;
                     tabu[s]    = k;
-                    visited[k] = false;
+                    visited[k] = 0;
                     break;
                 }
             }

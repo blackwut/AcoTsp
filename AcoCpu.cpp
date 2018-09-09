@@ -84,10 +84,12 @@ private:
                 const uint32_t from = *(bTabu++);
                 const uint32_t to   = *(bTabu);
                 delta[from * nCities + to] += tau;
+                delta[to * nCities + from] += tau;
             }
             const uint32_t from = *(bTabu);
             const uint32_t to   = *(constbTabu);
             delta[from * nCities + to] += tau;
+            delta[to * nCities + from] += tau;
         }
     }
     
@@ -99,8 +101,8 @@ private:
         auto bDelta     = delta.begin();
 
         while ( bPheromone != pheromone.end() ) {
-            T & pheromoneVal = *(bPheromone++);
-            const T & deltaVal     = *(bDelta++);
+            T & pheromoneVal   = *(bPheromone++);
+            const T & deltaVal = *(bDelta++);
 
             pheromoneVal = pheromoneVal * rho + deltaVal;
         }
