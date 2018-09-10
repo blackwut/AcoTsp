@@ -172,8 +172,6 @@ private:
         std::copy ( bestAnt->getTabu().begin(), bestAnt->getTabu().end(), bestTour.begin() );
         bestTourLength = bestAnt->getTourLength();
 
-        if (bestAnt == &ants[0]) std::cout << "E CHE CAZZO PERO'" << std::endl; 
-
         // const Ant<T> & bestAnt = *std::min_element(ants.begin(), ants.end());
         // std::copy ( bestAnt.getTabu().begin(), bestAnt.getTabu().end(), bestTour.begin() );
         // bestTourLength = bestAnt.getTourLength();

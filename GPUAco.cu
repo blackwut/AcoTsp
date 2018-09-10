@@ -14,10 +14,6 @@ using namespace cooperative_groups;
 #include "common.hpp"
 #include "TSP.cpp"
 
-#ifndef D_TYPE
-#define D_TYPE float
-#endif
-
 #define cudaCheck(ans) do { cudaAssert((ans), __FILE__, __LINE__); } while(0)
 inline void cudaAssert(cudaError_t code, const char * file, uint32_t line, bool abort = true)
 {
@@ -28,7 +24,6 @@ inline void cudaAssert(cudaError_t code, const char * file, uint32_t line, bool 
         }
     }
 }
-
 
 __global__ 
 void initCurand(curandStateXORWOW_t * state,
@@ -140,7 +135,7 @@ void calcTour(uint32_t * tabu,
     extern __shared__ uint32_t smem[];
     float    * p = (float *)     smem;
     uint32_t * k = (uint32_t *) &p[alignedCols];
-    uint8_t  * v = (uint8_t *)  &k[1]; 
+    uint8_t  * v = (uint8_t *)  &k[4];
 
     const uint32_t tid = threadIdx.x;
 
@@ -364,22 +359,26 @@ void updatePheromone(float * pheromone,
     }
 }
 
+inline uint32_t divUp(const uint32_t elems, const uint32_t div) {
+    return (elems + div - 1) / div;
+}
+
 inline uint32_t numberOfBlocks(const uint32_t elems, const uint32_t blockSize) {
-    return (elems + blockSize - 1) / blockSize;
+    return divUp(elems, blockSize);
 }
 
 inline uint32_t alignToWarp(const uint32_t elems) {
-    return ((elems + 31) / 32) * 32;
+    return numberOfBlocks(elems, 32) * 32;
 }
 
 
 int main(int argc, char * argv[]) {
 
 	char * path = new char[MAX_LEN];
-	D_TYPE alpha = 1.0f;
-	D_TYPE beta = 2.0f;
-	D_TYPE q = 1.0f;
-	D_TYPE rho = 0.5f;
+	float alpha = 1.0f;
+	float beta = 2.0f;
+	float q = 1.0f;
+	float rho = 0.5f;
 	int maxEpoch = 1;
 	
 	if (argc < 7) {
@@ -396,13 +395,9 @@ int main(int argc, char * argv[]) {
     rho      = parseArg<float>   (argv[4]);
     maxEpoch = parseArg<uint32_t>(argv[5]);
 
-    TSP<D_TYPE> tsp(path);
+    TSP<float> tsp(path);
 
-#if DEBUG
-    const uint64_t seed         = 123;
-#else 
     const uint64_t seed         = time(0);
-#endif
     const uint32_t nAnts        = tsp.getNCities();
     const uint32_t nCities      = tsp.getNCities();
     const float    valPheromone = 1.0f / nCities;
@@ -421,15 +416,34 @@ int main(int argc, char * argv[]) {
     const uint32_t alignedAnts = alignToWarp(nAnts);
     const uint32_t alignedCities = alignToWarp(nCities);
 
-    const uint32_t randStateElems  = alignedAnts;
-    const uint32_t edgesElems      = nCities * alignedCities;
-    const uint32_t etaElems        = nCities * alignedCities;
-    const uint32_t pheromoneElems  = nCities * alignedCities;
-    const uint32_t fitnessElems    = nCities * alignedCities;
-    const uint32_t deltaElems      = nCities * alignedCities;
-    const uint32_t tabuElems       = nAnts   * alignedCities;
-    const uint32_t tourLengthElems = alignedAnts;
-    const uint32_t bestTourElems   = alignedCities;
+    const uint32_t randStateRows  = alignedAnts;
+    const uint32_t randStateCols  = 1;
+    const uint32_t edgesRows      = nCities;
+    const uint32_t edgesCols      = alignedCities;
+    const uint32_t etaRows        = nCities;
+    const uint32_t etaCols        = alignedCities;
+    const uint32_t pheromoneRows  = nCities;
+    const uint32_t pheromoneCols  = alignedCities;
+    const uint32_t fitnessRows    = nCities;
+    const uint32_t fitnessCols    = alignedCities;
+    const uint32_t deltaRows      = nCities;
+    const uint32_t deltaCols      = alignedCities;
+    const uint32_t tabuRows       = nAnts;
+    const uint32_t tabuCols       = alignedCities;
+    const uint32_t tourLengthRows = alignedAnts;
+    const uint32_t tourLengthCols = 1;
+    const uint32_t bestTourRows   = alignedCities;
+    const uint32_t bestTourCols   = 1;
+
+    const uint32_t randStateElems  = randStateRows  * randStateCols;
+    const uint32_t edgesElems      = edgesRows      * edgesCols;
+    const uint32_t etaElems        = etaRows        * etaCols;
+    const uint32_t pheromoneElems  = pheromoneRows  * pheromoneCols;
+    const uint32_t fitnessElems    = fitnessRows    * fitnessCols;
+    const uint32_t deltaElems      = deltaRows      * deltaCols;
+    const uint32_t tabuElems       = tabuRows       * tabuCols;
+    const uint32_t tourLengthElems = tourLengthRows * tourLengthCols;
+    const uint32_t bestTourElems   = bestTourRows   * bestTourCols;
 
     cudaCheck( cudaMallocManaged(&randState,      randStateElems  * sizeof(curandStateXORWOW_t)) );
     cudaCheck( cudaMallocManaged(&edges,          edgesElems      * sizeof(float))               );
@@ -456,7 +470,7 @@ int main(int argc, char * argv[]) {
     std::cout << " **** ACO TSP totalMemory **** \tMB " << (totalMemory / 1024.f) / 1024.f<< std::endl;
 
     *bestTourLength = FLT_MAX;
-    const std::vector<D_TYPE> & tspEdges = tsp.getEdges();
+    const std::vector<float> & tspEdges = tsp.getEdges();
     for (uint32_t i = 0; i < nCities; ++i) {
         for (uint32_t j = 0; j < alignedCities; ++j) {
             const uint32_t alignedId = i * alignedCities + j;
@@ -466,48 +480,49 @@ int main(int argc, char * argv[]) {
     }
 
     // Curand 
-    const dim3 initRandBlock(32);
+    const dim3 initRandBlock(128);
     const dim3 initRandGrid( numberOfBlocks(randStateElems, initRandBlock.x) );
     initCurand <<< initRandGrid, initRandBlock >>>(randState, seed, alignedAnts);
     cudaCheck( cudaGetLastError() );
     // Eta
-    const dim3 initEtaBlock(32);
-    const dim3 initEtaGrid( numberOfBlocks(etaElems, initEtaBlock.x) );
-    initEta <<<initEtaGrid, initEtaBlock >>>(eta, edges, nCities, alignedCities);
+    const dim3 initEtaBlock(128);
+    const dim3 initEtaGrid( numberOfBlocks(etaCols, initEtaBlock.x) );
+    initEta <<<initEtaGrid, initEtaBlock >>>(eta, edges, etaRows, etaCols);
     cudaCheck( cudaGetLastError() );
     // Pheromone
-    const dim3 initPheroBlock(32);
-    const dim3 initPheroGrid( numberOfBlocks(pheromoneElems, initPheroBlock.x) );
-    initPheromone <<<initPheroGrid, initPheroBlock>>> (pheromone, valPheromone, nCities, alignedCities, nCities);
+    const dim3 initPheroBlock(128);
+    const dim3 initPheroGrid( numberOfBlocks(pheromoneCols, initPheroBlock.x) );
+    initPheromone <<<initPheroGrid, initPheroBlock>>> (pheromone, valPheromone, pheromoneRows, pheromoneCols, nCities);
     cudaCheck( cudaGetLastError() );
-    // Delta
-    const dim3 initDeltaBlock(32);
-    const dim3 initDeltaGrid( numberOfBlocks(deltaElems, initDeltaBlock.x) );
-    initDelta <<<initDeltaGrid, initDeltaBlock>>> (delta, nCities, alignedCities);
-    cudaCheck( cudaGetLastError() );
+    
 
     startTimer();
     uint32_t epoch = 0;
     do {
-        // initDelta        <<<initDeltaGrid, initDeltaBlock         >>>(delta, nCities, alignedCities);
+        // Delta
+        const dim3 initDeltaBlock(128);
+        const dim3 initDeltaGrid( numberOfBlocks(deltaCols, initDeltaBlock.x) );
+        initDelta <<<initDeltaGrid, initDeltaBlock>>> (delta, deltaRows, deltaCols);
+        cudaCheck( cudaGetLastError() );
+
         // Fitness
-        const dim3 fitBlock(32);
-        const dim3 fitGrid( numberOfBlocks(fitnessElems, fitBlock.x) );
-        calcFitness <<<fitGrid, fitBlock >>> (fitness, pheromone, eta, alpha, beta, nCities, alignedCities);
+        const dim3 fitBlock(128);
+        const dim3 fitGrid( numberOfBlocks(fitnessCols, fitBlock.x) );
+        calcFitness <<<fitGrid, fitBlock >>> (fitness, pheromone, eta, alpha, beta, fitnessRows, fitnessCols);
         cudaCheck( cudaGetLastError() );
 
         // Tour
-        const dim3 tourGrid( 1);//( nAnts + 3 )/ 4);
+        const dim3 tourGrid( divUp(nAnts, 4) );
         const dim3 tourBlock(32);
         const uint32_t tourShared  = alignedCities  * sizeof(float)    + // p
-                                     1              * sizeof(uint32_t) + // k
+                                     4              * sizeof(uint32_t) + // k
                                      alignedCities  * sizeof(uint8_t);   // v
-        calcTour <<<tourGrid, tourBlock, tourShared>>> (tabu, fitness, nAnts, nCities, alignedCities, randState);
+        calcTour <<<tourGrid, tourBlock, tourShared>>> (tabu, fitness, nAnts, tabuRows, tabuCols, randState);
         cudaCheck( cudaGetLastError() );
 
         // TourLength
         const dim3 lenGrid(nAnts);
-        const dim3 lenBlock(64);
+        const dim3 lenBlock(32);
         const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
         calcTourLength <<<lenGrid, lenBlock, lenShared>>> (tourLength, edges, tabu, nAnts, alignedCities, nCities);
         cudaCheck( cudaGetLastError() );
@@ -527,14 +542,12 @@ int main(int argc, char * argv[]) {
 
         // Update Pheromone
         const dim3 pheroBlock(32);
-        const dim3 pheroGrid( numberOfBlocks(pheromoneElems, pheroBlock.x) );
-        updatePheromone <<<pheroGrid, pheroBlock>>> (pheromone, delta, nCities, alignedCities, rho);
+        const dim3 pheroGrid( numberOfBlocks(pheromoneCols, pheroBlock.x) );
+        updatePheromone <<<pheroGrid, pheroBlock>>> (pheromone, delta, pheromoneRows, pheromoneCols, rho);
         cudaCheck( cudaGetLastError() );
     } while (++epoch < maxEpoch);
 
     cudaDeviceSynchronize();
-
-    printMatrix("tabu", tabu, nAnts, alignedCities);
 
     stopAndPrintTimer();
     printMatrix("bestTour", bestTour, 1, nCities);
