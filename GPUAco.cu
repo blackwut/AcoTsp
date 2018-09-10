@@ -1,23 +1,22 @@
 #include <iostream>
 #include <fstream>
+#include <float.h>
 #include <cmath>
 #include <climits>
+#include <thread>
+#include <chrono>
 
 #include <curand.h>
 #include <curand_kernel.h>
-
-#include "common.hpp"
-#include "ACO.cpp"
-#include "TSP.cpp"
-#include <float.h>
-
-#include <thread>
-#include <chrono>
-#include <assert.h>
-
 #include <cooperative_groups.h>
 using namespace cooperative_groups;
 
+#include "common.hpp"
+#include "TSP.cpp"
+
+#ifndef D_TYPE
+#define D_TYPE float
+#endif
 
 #define cudaCheck(ans) do { cudaAssert((ans), __FILE__, __LINE__); } while(0)
 inline void cudaAssert(cudaError_t code, const char * file, uint32_t line, bool abort = true)
@@ -30,7 +29,6 @@ inline void cudaAssert(cudaError_t code, const char * file, uint32_t line, bool 
     }
 }
 
-#define DEBUG 1
 
 __global__ 
 void initCurand(curandStateXORWOW_t * state,
@@ -47,16 +45,12 @@ void initCurand(curandStateXORWOW_t * state,
 __device__ __forceinline__
 float randXOR(curandState * state)
 {
-#if DEBUG 
-    return 0.5f;
-#else 
     return (float) curand_uniform(state);
-#endif
 }
 
 __global__
 void initEta(float * eta,
-             const float * distance,
+             const float * edges,
              const uint32_t rows,
              const uint32_t cols)
 {
@@ -65,12 +59,8 @@ void initEta(float * eta,
     for (uint32_t r = 0; r < rows; ++r) {
         for (uint32_t c = tid; c < cols; c += gridDim.x * blockDim.x) {
             const uint32_t id = r * cols + c;
-            const float d = distance[id];
-#if DEBUG
-            eta[id] = (d == 0.f) ? 0.f : 0.1f;
-#else 
-            eta[id] = (d == 0.f) ? 0.f : 1.f / d;
-#endif
+            const float d = edges[id];
+            eta[id] = (d == 0.0) ? 0.0 : 1.0 / d;
         }
     }
 }
@@ -79,14 +69,15 @@ __global__
 void initPheromone(float * pheromone,
                    const float initialValue,
                    const uint32_t rows,
-                   const uint32_t cols)
+                   const uint32_t cols,
+                   const uint32_t realCols)
 {
     const uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
 
     for (uint32_t r = 0; r < rows; ++r) {
         for (uint32_t c = tid; c < cols; c += gridDim.x * blockDim.x) {
             const uint32_t id = r * cols + c;
-            pheromone[id] = initialValue;
+            pheromone[id] = initialValue * ( c < realCols );
         }
     }
 }
@@ -101,19 +92,19 @@ void initDelta(float * delta,
     for (uint32_t r = 0; r < rows; ++r) {
         for (uint32_t c = tid; c < cols; c += gridDim.x * blockDim.x) {
         const uint32_t id = r * cols + c;
-            delta[id] = 0.f;
+            delta[id] = 0.0;
         }
     }
 }
 
 __global__
-void calculateFitness(float * fitness,
-                      const float * pheromone,
-                      const float * eta,
-                      const float alpha,
-                      const float beta,
-                      const uint32_t rows,
-                      const uint32_t cols)
+void calcFitness(float * fitness,
+                 const float * pheromone,
+                 const float * eta,
+                 const float alpha,
+                 const float beta,
+                 const uint32_t rows,
+                 const uint32_t cols)
 {
     const uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -139,12 +130,12 @@ float scanWarpFloat(const uint32_t tid, float x) {
 }
 
 __global__
-void claculateTour(uint32_t * tabu,
-                   const float * fitness,
-                   const uint32_t rows,
-                   const uint32_t cols,
-                   const uint32_t alignedCols,
-                   curandStateXORWOW_t * state)
+void calcTour(uint32_t * tabu,
+              const float * fitness,
+              const uint32_t rows,
+              const uint32_t cols,
+              const uint32_t alignedCols,
+              curandStateXORWOW_t * state)
 {
     extern __shared__ uint32_t smem[];
     float    * p = (float *)     smem;
@@ -153,70 +144,64 @@ void claculateTour(uint32_t * tabu,
 
     const uint32_t tid = threadIdx.x;
 
-    // initialize visited array
-    for (uint32_t i = tid; i < alignedCols; i += 32) { 
-        v[i] = 1;
-    }
-    __syncwarp();
+    for (uint32_t ant = blockIdx.x; ant < rows; ant += gridDim.x) {
 
-    // get random starting city and update visited and tabu
-    if (tid == 0) {
-#if DEBUG
-        const uint32_t kappa = 0;
-#else
-        const uint32_t kappa = cols * randXOR(state + blockIdx.x);
-#endif
-        *k = kappa;
-        v[kappa] = 0;
-        tabu[blockIdx.x * alignedCols] = kappa;
-    }
-    
-
-    for (uint32_t s = 1; s < cols; ++s) {
-        __syncwarp(); // sync warp once for tabu initialization and then for *k value update
-        // get city from shared memory
-        const uint32_t kappa = *k;
-
-        // update probability values
-        for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
-            p[pid] = fitness[kappa * alignedCols + pid] * v[pid];
+        for (uint32_t i = tid; i < alignedCols; i += 32) {
+            v[i] = 1;
         }
         __syncwarp();
 
-        float sum = 0.f;
-        for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
-            const float x = p[pid];
-            const float y = sum + scanWarpFloat(tid, x);
-            p[pid] = y;
-            sum = __shfl_sync(FULL_MASK, y, 31);
-            // printf("%d) %f - %f - %f\n", pid, x, y, sum);
-        }
-
-        __syncwarp();
-
-        // generate and broadcast randomFloat
-        float randomFloat = -1.f;
         if (tid == 0) {
-            randomFloat = randXOR(state + blockIdx.x);
+            const uint32_t kappa = cols * randXOR(state + ant);
+            *k = kappa;
+            v[kappa] = 0;
+            tabu[ant * alignedCols] = kappa;
         }
-        randomFloat = __shfl_sync(FULL_MASK, randomFloat, 0);
+        
 
-        const float probability = randomFloat * sum;
-        for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
-            
-            const float prevP = (pid == 0 ? 0.f : p[pid - 1]);
-            const float currP = p[pid];
-            const float magicProbability = (prevP - probability) * (currP - probability);
-            const uint32_t ballotMask = __ballot_sync(FULL_MASK, magicProbability <= 0.f);
-            const uint32_t winner = __ffs(ballotMask);
+        for (uint32_t s = 1; s < cols; ++s) {
+            __syncwarp(); // sync warp once for tabu initialization and then for *k value update
+            // get city from shared memory
+            const uint32_t kappa = *k;
 
-            if (winner > 0) {
-                if (tid == winner - 1) {
-                    tabu[blockIdx.x * alignedCols + s] = pid;
-                    v[pid]= 0;
-                    *k = pid;
+            for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
+                p[pid] =  fitness[kappa * alignedCols + pid] * v[pid];
+            }
+            __syncwarp();
+
+            float sum = 0.0;
+            for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
+                const float x = p[pid];
+                const float y = sum + scanWarpFloat(tid, x);
+                p[pid] = y;
+                sum = __shfl_sync(FULL_MASK, y, 31);
+            }
+            __syncwarp();
+
+            float randomFloat = -1.0;
+            if (tid == 0) {
+                randomFloat = randXOR(state + ant);
+            }
+            randomFloat = __shfl_sync(FULL_MASK, randomFloat, 0);
+
+            const float probability = randomFloat * sum;
+            for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
+                
+                // const float prevP = (pid == 0 ? 0.0 : p[pid - 1]);
+                const float currP = p[pid];
+                // const float magicProbability = (prevP - probability) * (currP - probability);
+                // const float magicProbability = currP - probability;
+                const uint32_t ballotMask = __ballot_sync(FULL_MASK,  probability <= currP);
+                const uint32_t winner = __ffs(ballotMask);
+
+                if (winner > 0) {
+                    if (tid == winner - 1) {
+                        tabu[ant * alignedCols + s] = pid;
+                        v[pid]= 0;
+                        *k = pid;
+                    }
+                    break;
                 }
-                break;
             }
         }
     }
@@ -233,27 +218,27 @@ float reduceTileFloat(const thread_block_tile<32> & g, float x) {
 }
 
 __global__
-void calculateTourLen(const float * distance,
-                      const uint32_t * tabu,
-                      float * tourLen,
-                      const uint32_t rows,
-                      const uint32_t cols,
-                      const uint32_t realCols)
+void calcTourLength(float * tourLength,
+                    const float * edges,
+                    const uint32_t * tabu,
+                    const uint32_t rows,
+                    const uint32_t cols,
+                    const uint32_t realCols)
 {
     __shared__ float finalLength[1];
 
     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
     const uint32_t numberOfBlocks = (cols + 31) / 32;
 
-    float totalLength = 0.f;
+    float totalLength = 0.0;
     for (uint32_t blockId = threadIdx.x / 32; blockId < numberOfBlocks; blockId += blockDim.x / 32) {
         const uint32_t warpTid = blockIdx.x * cols + tile32.thread_rank() + (blockId * 32);
 
-        float len = 0.f;
+        float len = 0.0;
         if (tile32.thread_rank() + (blockId * 32) < realCols - 1) {
             const uint32_t from = tabu[warpTid];
             const uint32_t to   = tabu[warpTid + 1];
-            len  = distance[from * cols + to];
+            len  = edges[from * cols + to];
         }
         totalLength += reduceTileFloat(tile32, len);
     }
@@ -261,23 +246,21 @@ void calculateTourLen(const float * distance,
     if (threadIdx.x == 0) {
         const uint32_t from = tabu[blockIdx.x * cols + realCols - 1];
         const uint32_t to   = tabu[blockIdx.x * cols];
-        const float    len  = distance[from * cols + to];
+        const float    len  = edges[from * cols + to];
         
         totalLength += len;
 
-        finalLength[0] = 0.f;
+        finalLength[0] = 0.0;
     }
-
     __syncthreads();
 
     if (tile32.thread_rank() == 0) {
         atomicAdd(finalLength, totalLength);
     }
-
     __syncthreads();
 
     if (threadIdx.x == 0) {
-        tourLen[blockIdx.x] = finalLength[0];
+        tourLength[blockIdx.x] = finalLength[0];
     }
 }
 
@@ -293,24 +276,23 @@ float minTileFloat(const thread_block_tile<32> & g, float x) {
 }
 
 __global__
-void updateBest(uint32_t * bestPath,
-                const uint32_t * tabu,
-                const float * tourLen,
-                const uint32_t rows,
-                const uint32_t cols,
-                const uint32_t realCols,
-                float * bestPathLen)
+void updateBestTour(uint32_t * bestTour,
+                    float * bestTourLength,
+                    const uint32_t * tabu,
+                    const float * tourLength,
+                    const uint32_t rows,
+                    const uint32_t cols,
+                    const uint32_t realCols)
 {
     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
     const uint32_t tid = threadIdx.x;
 
-    uint32_t bestAnt = 1234567890; // fake number just to be sure that will not appear somewere
+    uint32_t bestAnt = 1234567890; // fake number just to be sure that will not appear somewhere
     float minLength = FLT_MAX;
 
-    //TODO: verify if bestAnt is correct when cols >= 1024
     for (uint32_t stride = 0; stride < cols; stride += 32) {
         const uint32_t warpTid = tid + stride;
-        const float x = (warpTid < realCols) ? tourLen[warpTid] : FLT_MAX; //TODO: find a way to avoid realCols parameter
+        const float x = (warpTid < realCols) ? tourLength[warpTid] : FLT_MAX; //TODO: find a way to avoid realCols parameter
         minLength = fminf(x, minLength);
         bestAnt = (x == minLength) ? warpTid : bestAnt;
 
@@ -322,19 +304,18 @@ void updateBest(uint32_t * bestPath,
     }
 
     for (uint32_t i = tid; i < cols; i += 32) {
-        bestPath[i] = tabu[bestAnt * cols + i];
+        bestTour[i] = tabu[bestAnt * cols + i];
     }
 
     if (tid == 0) {
-        bestPathLen[0] = minLength;
+        bestTourLength[0] = minLength;
     }
 }
-
 
 __global__
 void updateDelta(float * delta,
                  const uint32_t * tabu,
-                 const float * tourLen,
+                 const float * tourLenght,
                  const uint32_t rows,
                  const uint32_t cols,
                  const uint32_t realCols,
@@ -343,29 +324,31 @@ void updateDelta(float * delta,
     extern __shared__ uint32_t tabus[];
     const uint32_t tid = threadIdx.x;
 
-    for (uint32_t i = tid; i < realCols; i += blockDim.x) { //TODO: verifica se c'è un degrado di prestazioni se invece di cols usi realCols in tutto il kernel
+    for (uint32_t i = tid; i < cols; i += blockDim.x) {
         tabus[i] = tabu[blockIdx.x * cols + i];
     }
     __syncthreads();
 
-    const float tau = q / tourLen[blockIdx.x];
+    const float tau = q / tourLenght[blockIdx.x];
 
     for (uint32_t i = tid; i < realCols - 1; i += blockDim.x) { 
         const uint32_t from = tabus[i];
         const uint32_t to   = tabus[i + 1];
         atomicAdd(delta + (from * cols + to), tau);
+        atomicAdd(delta + (to * cols + from), tau);
     }
 
     if (tid == 0) {
         const uint32_t from = tabus[realCols - 1];
         const uint32_t to   = tabus[0];
         atomicAdd(delta + (from * cols + to), tau);
+        atomicAdd(delta + (to * cols + from), tau);
     }
 }
 
 __global__
 void updatePheromone(float * pheromone,
-                     float * delta,
+                     const float * delta,
                      const uint32_t rows,
                      const uint32_t cols,
                      const float rho)
@@ -376,24 +359,18 @@ void updatePheromone(float * pheromone,
         for (uint32_t c = tid; c < cols; c += gridDim.x * blockDim.x) {
             const uint32_t id = r * cols + c;
             const float p = pheromone[id];
-            pheromone[id] = p * (1.f  - rho) + delta[id];
-            delta[id] = 0.f;
+            pheromone[id] = p * (1.0 - rho) + delta[id];
         }
     }
 }
 
-uint32_t numberOfBlocks(uint32_t elems, uint32_t blockSize) {
+inline uint32_t numberOfBlocks(const uint32_t elems, const uint32_t blockSize) {
     return (elems + blockSize - 1) / blockSize;
 }
 
-uint32_t roundWithBlockSize(uint32_t elems, uint32_t blockSize)
-{
-    return numberOfBlocks(elems, blockSize) * blockSize; 
+inline uint32_t alignToWarp(const uint32_t elems) {
+    return ((elems + 31) / 32) * 32;
 }
-
-#ifndef D_TYPE
-#define D_TYPE float
-#endif
 
 
 int main(int argc, char * argv[]) {
@@ -419,295 +396,160 @@ int main(int argc, char * argv[]) {
     rho      = parseArg<float>   (argv[4]);
     maxEpoch = parseArg<uint32_t>(argv[5]);
 
-	TSP<D_TYPE> * tsp = new TSP<D_TYPE>(path);
-	ACO<D_TYPE> * aco = new ACO<D_TYPE>(tsp->dimension, tsp->dimension, alpha, beta, q, rho, maxEpoch, 0);
+    TSP<D_TYPE> tsp(path);
 
 #if DEBUG
     const uint64_t seed         = 123;
 #else 
     const uint64_t seed         = time(0);
 #endif
-    const uint32_t nAnts        = aco->nAnts;
-    const uint32_t nCities      = tsp->dimension;
+    const uint32_t nAnts        = tsp.getNCities();
+    const uint32_t nCities      = tsp.getNCities();
     const float    valPheromone = 1.0f / nCities;
 
     curandStateXORWOW_t * randState;
-    float * distance;
+    float * edges;
     float * eta;
     float * pheromone;
     float * fitness;
     float * delta;
     uint32_t * tabu;
-    float * tourLen;
-    uint32_t * bestPath;
-    float * bestPathLen;
+    float * tourLength;
+    uint32_t * bestTour;
+    float * bestTourLength;
 
-    const uint32_t alignedAnts = ((nAnts + 31) / 32) * 32;
-    const uint32_t alignedCities = ((nCities + 31) / 32) * 32;
+    const uint32_t alignedAnts = alignToWarp(nAnts);
+    const uint32_t alignedCities = alignToWarp(nCities);
 
-    std::cout << "alignedAnts:   " << alignedAnts   << std::endl;
-    std::cout << "alignedCities: " << alignedCities << std::endl;
+    const uint32_t randStateElems  = alignedAnts;
+    const uint32_t edgesElems      = nCities * alignedCities;
+    const uint32_t etaElems        = nCities * alignedCities;
+    const uint32_t pheromoneElems  = nCities * alignedCities;
+    const uint32_t fitnessElems    = nCities * alignedCities;
+    const uint32_t deltaElems      = nCities * alignedCities;
+    const uint32_t tabuElems       = nAnts   * alignedCities;
+    const uint32_t tourLengthElems = alignedAnts;
+    const uint32_t bestTourElems   = alignedCities;
 
+    cudaCheck( cudaMallocManaged(&randState,      randStateElems  * sizeof(curandStateXORWOW_t)) );
+    cudaCheck( cudaMallocManaged(&edges,          edgesElems      * sizeof(float))               );
+    cudaCheck( cudaMallocManaged(&eta,            etaElems        * sizeof(float))               );
+    cudaCheck( cudaMallocManaged(&pheromone,      pheromoneElems  * sizeof(float))               );
+    cudaCheck( cudaMallocManaged(&fitness,        fitnessElems    * sizeof(float))               );
+    cudaCheck( cudaMallocManaged(&delta,          deltaElems      * sizeof(float))               );
+    cudaCheck( cudaMallocManaged(&tabu,           tabuElems       * sizeof(uint32_t))            );
+    cudaCheck( cudaMallocManaged(&tourLength,     tourLengthElems * sizeof(float))               );
+    cudaCheck( cudaMallocManaged(&bestTour,       bestTourElems   * sizeof(uint32_t))            );
+    cudaCheck( cudaMallocManaged(&bestTourLength, sizeof(float))                                 );
 
-    const uint32_t randStateElems = alignedAnts;
-    const uint32_t distanceElems  = nCities * alignedCities;
-    const uint32_t etaElems       = nCities * alignedCities;
-    const uint32_t pheromoneElems = nCities * alignedCities;
-    const uint32_t fitnessElems   = nCities * alignedCities;
-    const uint32_t deltaElems     = nCities * alignedCities;
-    const uint32_t tabuElems      = nAnts   * alignedCities;
-    const uint32_t tourLenElems  = alignedAnts;
-    const uint32_t bestPathElems  = alignedCities;
-
-    cudaCheck( cudaMallocManaged(&randState,   randStateElems * sizeof(curandStateXORWOW_t)) );
-    cudaCheck( cudaMallocManaged(&distance,    distanceElems  * sizeof(float))               );
-    cudaCheck( cudaMallocManaged(&eta,         etaElems       * sizeof(float))               );
-    cudaCheck( cudaMallocManaged(&pheromone,   pheromoneElems * sizeof(float))               );
-    cudaCheck( cudaMallocManaged(&fitness,     fitnessElems   * sizeof(float))               );
-    cudaCheck( cudaMallocManaged(&delta,       deltaElems     * sizeof(float))               );
-    cudaCheck( cudaMallocManaged(&tabu,        tabuElems      * sizeof(uint32_t))            );
-    cudaCheck( cudaMallocManaged(&tourLen,     tourLenElems   * sizeof(float))               );
-    cudaCheck( cudaMallocManaged(&bestPath,    bestPathElems  * sizeof(uint32_t))            );
-    cudaCheck( cudaMallocManaged(&bestPathLen, sizeof(float))                                );
-
-    const uint32_t totalMemory = (randStateElems * sizeof(float)    +
-                                  distanceElems  * sizeof(float)    +
-                                  etaElems       * sizeof(float)    +
-                                  pheromoneElems * sizeof(float)    +
-                                  fitnessElems   * sizeof(float)    +
-                                  deltaElems     * sizeof(float)    +
-                                  tabuElems      * sizeof(uint32_t) +
-                                  tourLenElems   * sizeof(float)    +
-                                  bestPathElems  * sizeof(uint32_t) +
-                                  1              * sizeof(float));
+    const uint32_t totalMemory = (randStateElems  * sizeof(float)    +
+                                  edgesElems      * sizeof(float)    +
+                                  etaElems        * sizeof(float)    +
+                                  pheromoneElems  * sizeof(float)    +
+                                  fitnessElems    * sizeof(float)    +
+                                  deltaElems      * sizeof(float)    +
+                                  tabuElems       * sizeof(uint32_t) +
+                                  tourLengthElems * sizeof(float)    +
+                                  bestTourElems   * sizeof(uint32_t) +
+                                  1               * sizeof(float));
 
     std::cout << " **** ACO TSP totalMemory **** \tMB " << (totalMemory / 1024.f) / 1024.f<< std::endl;
 
-    *bestPathLen = FLT_MAX;
-
+    *bestTourLength = FLT_MAX;
+    const std::vector<D_TYPE> & tspEdges = tsp.getEdges();
     for (uint32_t i = 0; i < nCities; ++i) {
         for (uint32_t j = 0; j < alignedCities; ++j) {
-            const uint32_t edgeId = i * nCities + j;
-            distance[i * alignedCities + j] = (j < nCities) ? tsp->edges[edgeId] : 0.f;
+            const uint32_t alignedId = i * alignedCities + j;
+            const uint32_t id = i * nCities + j;
+            edges[alignedId] = (j < nCities) ? tspEdges[id] : 0.0;
         }
     }
 
-#if DEBUG
-    float    * _distance  = (float *)    malloc(distanceElems  * sizeof(float));
-    float    * _eta       = (float *)    malloc(etaElems       * sizeof(float));
-    float    * _pheromone = (float *)    malloc(pheromoneElems * sizeof(float));
-    float    * _fitness   = (float *)    malloc(fitnessElems   * sizeof(float));
-    float    * _delta     = (float *)    malloc(deltaElems     * sizeof(float));
-    uint32_t * _tabu      = (uint32_t *) malloc(tabuElems      * sizeof(uint32_t));
-    float    * _tourLen   = (float *)    malloc(tourLenElems   * sizeof(float));
-    uint32_t * _bestPath  = (uint32_t *) malloc(bestPathElems  * sizeof(uint32_t));
-    float _bestPathLen;
-
-    for (uint32_t i = 0; i < nCities; ++i) {
-        for (uint32_t j = 0; j < alignedCities; ++j) {
-            const uint32_t edgeId = i * nCities + j;
-            const uint32_t id = i * alignedCities +j;
-            const float d = (j < nCities) ? tsp->edges[edgeId] : 0.f;
-            _distance[id] = d;
-            _eta[id] = (d == 0.f) ? 0.f : 1.f / d;
-            _pheromone[id] = valPheromone;
-            _delta[id] = 0;
-        }
-        _tourLen[i] = 0.f;
-        _bestPath[i] = 0;
-    }
-    _bestPathLen = FLT_MAX;
-
-    for (uint32_t i = 0; i < nCities; ++i) {
-        for (uint32_t j = 0; j < alignedCities; ++j) {
-             const uint32_t id = i * alignedCities +j;
-            _fitness[id] = powf(_pheromone[id], alpha) * powf(_eta[id], beta);
-        }
-    }
-
-    uint32_t * v = new uint32_t[nCities];
-    float * p = new float[nCities];
-
-    for (uint32_t i = 0; i < nAnts; ++i) {
-
-        for (uint32_t j = 0; j < nCities; ++j) {
-            v[j] = 1;
-            p[j] = 0.f;
-        }
-
-        uint32_t k = 0.5 * nCities;
-        v[k] = 0;
-        _tabu[i * alignedCities] = k;
-
-        for (uint32_t s = 1; s < nCities; ++s) {
-            
-            float sum = 0.f;
-            for (uint32_t j = 0; j < nCities; ++j) {
-                sum += _fitness[k * alignedCities + j] * v[j];
-                p[j] = sum;
-            }
-
-            const uint32_t r = 0.5 * sum;
-
-            for (uint32_t j = 0; j < nCities; ++j) {
-                const float prevP = (j == 0) ? 0.f : p[j - 1];
-                const float currP = p[j];
-                const float magicNumber = (prevP - r) * (currP - r);
-                if (magicNumber <= 0.f) {
-                    k = j;
-                    _tabu[i * alignedCities + s] = k;
-                    v[k]= 0;
-                    break;
-                }
-            }
-        }
-    }
-    delete[] v;
-    delete[] p;
-
-    for (uint32_t i = 0; i < nAnts; ++i) {
-        float len = 0.f;
-        for (uint32_t j = 0; j < nCities; ++j) {
-            const uint32_t from = _tabu[i * alignedCities + j];
-            const uint32_t to = _tabu[i * alignedCities + j + 1];
-            len += _distance[from * alignedCities + to];
-        }
-        const uint32_t from = _tabu[i * alignedCities + nCities - 1];
-        const uint32_t to = _tabu[i * alignedCities];
-        len += _distance[from * alignedCities + to];
-
-        _tourLen[i] = len;
-    }
-
-    _bestPathLen = _tourLen[0];
-    uint32_t _maxId = 0;
-    for (uint32_t i = 1; i < nAnts; ++i) {
-        if (_tourLen[i] > _bestPathLen) {
-            _bestPathLen = _tourLen[i];
-            _maxId = i;
-        }
-    }
-
-    for (uint32_t i = 0; i < nCities; ++i) {
-        _bestPath[i] = _tabu[_maxId * alignedCities + i];
-    }
-
-    std::cout << "_bestPathLen: " << _bestPathLen << std::endl;
-    printMatrix("BEST_PATH", _bestPath, 1, nCities);
-
-#endif
-
-    dim3 dimBlock1D(32);
-    dim3 dimBlock2D(16, 16);
-
-    dim3 gridAnt1D(numberOfBlocks(nAnts, dimBlock1D.x));
-    dim3 gridMatrix2D(numberOfBlocks(nCities, dimBlock2D.y), numberOfBlocks(nCities, dimBlock2D.x));
-
-    startTimer();
-
+    // Curand 
     const dim3 initRandBlock(32);
     const dim3 initRandGrid( numberOfBlocks(randStateElems, initRandBlock.x) );
-
+    initCurand <<< initRandGrid, initRandBlock >>>(randState, seed, alignedAnts);
+    cudaCheck( cudaGetLastError() );
+    // Eta
     const dim3 initEtaBlock(32);
     const dim3 initEtaGrid( numberOfBlocks(etaElems, initEtaBlock.x) );
-
+    initEta <<<initEtaGrid, initEtaBlock >>>(eta, edges, nCities, alignedCities);
+    cudaCheck( cudaGetLastError() );
+    // Pheromone
     const dim3 initPheroBlock(32);
     const dim3 initPheroGrid( numberOfBlocks(pheromoneElems, initPheroBlock.x) );
-
+    initPheromone <<<initPheroGrid, initPheroBlock>>> (pheromone, valPheromone, nCities, alignedCities, nCities);
+    cudaCheck( cudaGetLastError() );
+    // Delta
     const dim3 initDeltaBlock(32);
     const dim3 initDeltaGrid( numberOfBlocks(deltaElems, initDeltaBlock.x) );
-
-    initCurand   <<<initRandGrid,  initRandBlock >>>(randState, seed, alignedAnts);
-    cudaCheck( cudaGetLastError() );
-    initEta      <<<initEtaGrid,   initEtaBlock  >>>(eta, distance, nCities, alignedCities);
-    cudaCheck( cudaGetLastError() );
-    initPheromone<<<initPheroGrid, initPheroBlock>>>(pheromone, valPheromone, nCities, alignedCities);
-    cudaCheck( cudaGetLastError() );
-    initDelta    <<<initDeltaGrid, initDeltaBlock>>>(delta, nCities, alignedCities);
+    initDelta <<<initDeltaGrid, initDeltaBlock>>> (delta, nCities, alignedCities);
     cudaCheck( cudaGetLastError() );
 
-    const dim3 fitBlock(32);
-    const dim3 fitGrid( numberOfBlocks(fitnessElems, fitBlock.x) );
-
-    const dim3 tourGrid(nAnts); // number of blocks
-    const dim3 tourBlock(32); // number of threads in a block
-    const uint32_t tourShared  = alignedCities  * sizeof(float)    + // p
-                                 1              * sizeof(uint32_t) + // k
-                                 alignedCities  * sizeof(uint8_t);   // v
-    std::cout << " **** TOUR   sharedMemory **** \tKB " << (tourShared / 1024.f) << std::endl;
-
-    const dim3 lenGrid(nAnts);
-    const dim3 lenBlock(64);
-    const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
-    std::cout << " **** LEN    sharedMemory **** \tKB " << (lenShared / 1024.f)  << std::endl;
-
-    const dim3 bestGrid(1);
-    const dim3 bestBlock(32);
-
-    const dim3 deltaGrid(nAnts);
-    const dim3 deltaBlock(32);
-    const uint32_t deltaShared = nCities * sizeof(uint32_t);
-    std::cout << " **** DELTA  sharedMemory **** \tKB " << (deltaShared / 1024.f) << std::endl;
-
-    const dim3 pheroBlock(32);
-    const dim3 pheroGrid( numberOfBlocks(pheromoneElems, pheroBlock.x) );
-
+    startTimer();
     uint32_t epoch = 0;
     do {
         // initDelta        <<<initDeltaGrid, initDeltaBlock         >>>(delta, nCities, alignedCities);
-        calculateFitness <<<fitGrid,       fitBlock               >>>(fitness, pheromone, eta, alpha, beta, nCities, alignedCities);
+        // Fitness
+        const dim3 fitBlock(32);
+        const dim3 fitGrid( numberOfBlocks(fitnessElems, fitBlock.x) );
+        calcFitness <<<fitGrid, fitBlock >>> (fitness, pheromone, eta, alpha, beta, nCities, alignedCities);
         cudaCheck( cudaGetLastError() );
-        claculateTour    <<<tourGrid,      tourBlock,  tourShared >>>(tabu, fitness, nAnts, nCities, alignedCities, randState);
+
+        // Tour
+        const dim3 tourGrid( 1);//( nAnts + 3 )/ 4);
+        const dim3 tourBlock(32);
+        const uint32_t tourShared  = alignedCities  * sizeof(float)    + // p
+                                     1              * sizeof(uint32_t) + // k
+                                     alignedCities  * sizeof(uint8_t);   // v
+        calcTour <<<tourGrid, tourBlock, tourShared>>> (tabu, fitness, nAnts, nCities, alignedCities, randState);
         cudaCheck( cudaGetLastError() );
-        calculateTourLen <<<lenGrid,       lenBlock,   lenShared  >>>(distance, tabu, tourLen, nAnts, alignedCities, nCities);
+
+        // TourLength
+        const dim3 lenGrid(nAnts);
+        const dim3 lenBlock(64);
+        const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
+        calcTourLength <<<lenGrid, lenBlock, lenShared>>> (tourLength, edges, tabu, nAnts, alignedCities, nCities);
         cudaCheck( cudaGetLastError() );
-        updateBest       <<<bestGrid,      bestBlock              >>>(bestPath, tabu, tourLen, nAnts, alignedCities, nCities, bestPathLen);
+
+        // Update best
+        const dim3 bestGrid(1);
+        const dim3 bestBlock(32);
+        updateBestTour <<<bestGrid, bestBlock>>> (bestTour, bestTourLength, tabu, tourLength, nAnts, alignedCities, nCities);
         cudaCheck( cudaGetLastError() );
-        updateDelta      <<<deltaGrid,     deltaBlock, deltaShared>>>(delta, tabu, tourLen, nAnts, alignedCities, nCities, q);
+        
+        // Update Delta
+        const dim3 deltaGrid(nAnts);
+        const dim3 deltaBlock(32);
+        const uint32_t deltaShared = alignedCities * sizeof(uint32_t);
+        updateDelta <<<deltaGrid, deltaBlock, deltaShared>>> (delta, tabu, tourLength, nAnts, alignedCities, nCities, q);
         cudaCheck( cudaGetLastError() );
-        updatePheromone  <<<pheroGrid,     pheroBlock             >>>(pheromone, delta, nCities, alignedCities, rho);
+
+        // Update Pheromone
+        const dim3 pheroBlock(32);
+        const dim3 pheroGrid( numberOfBlocks(pheromoneElems, pheroBlock.x) );
+        updatePheromone <<<pheroGrid, pheroBlock>>> (pheromone, delta, nCities, alignedCities, rho);
         cudaCheck( cudaGetLastError() );
     } while (++epoch < maxEpoch);
 
     cudaDeviceSynchronize();
-    
-    std::this_thread::sleep_for (std::chrono::seconds(1));
 
-#if DEBUG
-
-    compareArray("distance",  _distance , distance,  distanceElems);
-    compareArray("eta",       _eta      , eta,       etaElems);
-    compareArray("pheromone", _pheromone, pheromone, pheromoneElems);
-    compareArray("fitness",   _fitness  , fitness,   fitnessElems);
-    compareArray("delta",     _delta    , delta,     deltaElems);
-    compareArray("tabu",      _tabu     , tabu,      tabuElems);
-    compareArray("tourLen",   _tourLen  , tourLen,   tourLenElems);
-    compareArray("bestPath",  _bestPath , bestPath,  bestPathElems);
-
-#endif
-    // printMatrix("eta", eta, nCities, alignedCities);
-    // printMatrix("pheromone_", pheromone, nCities, alignedCities);
-    // printMatrix("delta", delta, nCities, alignedCities);
-    // printMatrix("fitness", fitness, nCities, alignedCities);
-    // printMatrix("tabu", tabu, nAnts, nCities);
+    printMatrix("tabu", tabu, nAnts, alignedCities);
 
     stopAndPrintTimer();
-    cout << (tsp->checkPath(bestPath) == 1 ? "Path OK!" : "Error in the path!") << endl;
-    cout << "bestPathLen: " << *bestPathLen << endl;
-    cout << "CPU Path distance: " << tsp->calculatePathLen(bestPath) << endl;
-    printMatrix("bestPath", bestPath, 1, nCities);
-
+    printMatrix("bestTour", bestTour, 1, nCities);
+    printResult(tsp.getName(), 0, 0, maxEpoch, getTimerMS(), getTimerUS(), *bestTourLength, !tsp.checkPath(bestTour));
 
     cudaFree(randState);
-    cudaFree(distance);
+    cudaFree(edges);
     cudaFree(eta);
     cudaFree(pheromone);
     cudaFree(fitness);
     cudaFree(delta);
     cudaFree(tabu);
-    cudaFree(tourLen);
-    cudaFree(bestPath);
-    cudaFree(bestPathLen);
+    cudaFree(tourLength);
+    cudaFree(bestTour);
+    cudaFree(bestTourLength);
 
     return 0;
 }

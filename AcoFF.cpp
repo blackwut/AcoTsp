@@ -115,14 +115,15 @@ private:
 
     ff_Farm<>            * farmTour;
     Emitter<T, D>        * emitterTour;
-    ParallelForReduce<T> * pfr;
+    ParallelForReduce<T> pfr;
+    ParallelForReduce< Ant<T> * > pfrAnts;
 
     void initEta(std::vector<T> & eta, 
                  const std::vector<T> & edges,
                  const uint32_t nCities)
     {
         const uint32_t elems = nCities * nCities;
-        pfr->parallel_for(0L, elems, [&](const long i) {
+        pfr.parallel_for(0L, elems, [&](const long i) {
             const T edgeVal = edges[i];
             eta[i] = (edgeVal == 0.0 ? 0.0 : 1.0 / edgeVal);
         });
@@ -136,7 +137,7 @@ private:
                      const T beta)
     {
         const uint32_t elems = nCities * nCities;
-        pfr->parallel_for(0L, elems, [&](const long i) {
+        pfr.parallel_for(0L, elems, [&](const long i) {
             fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
         });
     }
@@ -156,29 +157,32 @@ private:
     void updateBestTour(std::vector<uint32_t> & bestTour,
                         T & bestTourLength)
     {    
-        // Ant<T> maxAnt(0);
-        // Ant<T> * bestAnt;
-        // pfr->parallel_reduce(bestAnt,
-        //                      &maxAnt,
-        //                      0L, env.nAnts,
-        //                      [&](const long i, Ant<T> * minAnt) { 
-        //                          minAnt = (ants[i] < *minAnt ? &ants[i] : minAnt); 
-        //                      },
-        //                      [](Ant<T> * minAnt, Ant<T> * ant) { 
-        //                          minAnt = (*ant < *minAnt ? ant : minAnt);
-        //                      });
+        Ant<T> maxAnt(0);
+        Ant<T> * bestAnt = &ants[0];
+        pfrAnts.parallel_reduce(bestAnt,
+                                &maxAnt,
+                                0L, env.nAnts - 1,
+                                [&](const long i, Ant<T> * minAnt) {
+                                   if (ants[i + 1] < *minAnt) minAnt = &ants[i + 1];
+                                },
+                                [](Ant<T> * minAnt, Ant<T> * ant) { 
+                                   if (*ant < *minAnt) minAnt = ant;
+                                });
 
-        // std::copy ( bestAnt->getTabu().begin(), bestAnt->getTabu().end(), bestTour.begin() );
-        // bestTourLength = bestAnt->getTourLength();
-        const Ant<T> & bestAnt = *std::min_element(ants.begin(), ants.end());
-        std::copy ( bestAnt.getTabu().begin(), bestAnt.getTabu().end(), bestTour.begin() );
-        bestTourLength = bestAnt.getTourLength();
+        std::copy ( bestAnt->getTabu().begin(), bestAnt->getTabu().end(), bestTour.begin() );
+        bestTourLength = bestAnt->getTourLength();
+
+        if (bestAnt == &ants[0]) std::cout << "E CHE CAZZO PERO'" << std::endl; 
+
+        // const Ant<T> & bestAnt = *std::min_element(ants.begin(), ants.end());
+        // std::copy ( bestAnt.getTabu().begin(), bestAnt.getTabu().end(), bestTour.begin() );
+        // bestTourLength = bestAnt.getTourLength();
     }
 
     void resetDelta(std::vector<D> & delta,
                     const uint32_t nCities) {
         const uint32_t elems = nCities * nCities;
-        pfr->parallel_for(0L, elems, [&](const long i) {
+        pfr.parallel_for(0L, elems, [&](const long i) {
             delta[i] = 0.0;
         });
     }
@@ -188,7 +192,7 @@ private:
                          const uint32_t nCities,
                          const T rho) {
         const uint32_t elems = nCities * nCities;
-        pfr->parallel_for(0L, elems, [&](const long i) {
+        pfr.parallel_for(0L, elems, [&](const long i) {
             pheromone[i] = pheromone[i] * rho + delta[i];
         });
     }
@@ -203,7 +207,9 @@ private:
     env        (env),
     mapWorkers (mapWorkers),
     farmWorkers(farmWorkers),
-    ants       (env.nAnts, Ant<T>(env.nCities))
+    ants       (env.nAnts, Ant<T>(env.nCities)),
+    pfr        (mapWorkers),
+    pfrAnts    (mapWorkers)
     {
         farmTour = new ff_Farm<>( [&]() {
             std::vector< unique_ptr<ff_node> > workers;
@@ -217,7 +223,6 @@ private:
         farmTour->remove_collector();
         farmTour->wrap_around();
 
-        pfr = new ParallelForReduce<T>(mapWorkers);
         initEta(env.eta, env.edges, env.nCities);
     }
 
@@ -235,6 +240,5 @@ private:
     ~AcoFF(){
         delete farmTour;
         delete emitterTour;
-        delete pfr;
     }
 };

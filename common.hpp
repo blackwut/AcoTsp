@@ -23,14 +23,6 @@ enum ERROR {
     EXIT_NODE_COORD_TYPE
 };
 
-
-// #define fitness(a, b)	aco->fitness[a * aco->nCities + b]
-// #define p(a, b)			aco->p[a * aco->nCities + b]
-// #define visited(a, b)	aco->visited[a * aco->nCities + b]
-// #define tabu(a, b)		aco->tabu[a * aco->nCities + b]
-// #define delta(a, b)     aco->delta[a * tsp->dimension + b]
-// #define edges(a, b)		tsp->edges[a * tsp->dimension + b]
-
 template <typename T>
 inline T parseArg(char * arg) {
     clog << "Error: type not supported!" << endl;
@@ -138,6 +130,28 @@ inline void stopAndPrintTimer(string name) {
     stopTimer();
     cout << name;
     printTimer();
+}
+
+inline void printResult(const string & name,
+                        const uint32_t mapWorkers,
+                        const uint32_t farmWorkers,
+                        const uint32_t maxEpoch,
+                        const long     timeMS,
+                        const long     timeUS,
+                        const float    bestTourLength,
+                        const bool     checkPath)
+{
+#define LOG_SEP " "
+    std::clog << " *** "       << LOG_SEP
+    << name                    << LOG_SEP
+    << mapWorkers              << LOG_SEP
+    << farmWorkers             << LOG_SEP
+    << maxEpoch                << LOG_SEP
+    << timeMS                  << LOG_SEP
+    << timeUS                  << LOG_SEP
+    << bestTourLength          << LOG_SEP
+    << (checkPath ? "Y" : "N") << LOG_SEP
+    << std::endl;
 }
 
 #endif

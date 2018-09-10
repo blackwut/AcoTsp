@@ -8,13 +8,9 @@
 #include "Environment.cpp"
 #include "common.hpp"
 
-using namespace std;
-
 #ifndef D_TYPE
 #define D_TYPE float
 #endif
-
-#define LOG_SEP " "
 
 int main(int argc, char * argv[]) {
 
@@ -28,7 +24,7 @@ int main(int argc, char * argv[]) {
     uint32_t farmWorkers = 0;  
 
     if (argc < 7 || argc == 8) {
-        cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpoch [mapWorkers farmWorkers]" << endl;
+        std::cout << "Usage: ./acocpu file.tsp alpha beta q rho maxEpoch [mapWorkers farmWorkers]" << std::endl;
         exit(EXIT_ARGUMENTS_NUMBER);
     }
 
@@ -52,7 +48,7 @@ int main(int argc, char * argv[]) {
     bool parallelCondition = mapWorkers > 0 && farmWorkers > 0;
 
     if (!parallelCondition) {
-        cout << "***** ACO CPU *****" << endl;
+        std::cout << "***** ACO CPU *****" << std::endl;
         Environment<D_TYPE, D_TYPE> env(tsp.getNCities(), tsp.getNCities(), tsp.getEdges());
         AcoCpu<D_TYPE, D_TYPE> acocpu(params, env);
 
@@ -61,21 +57,11 @@ int main(int argc, char * argv[]) {
         stopAndPrintTimer();
 
         printMatrixV("bestTour", env.getBestTour(), 1, env.nCities, 0);
+        printResult(tsp.getName(), mapWorkers, farmWorkers, maxEpoch, getTimerMS(), getTimerUS(), env.getBestTourLength(), !tsp.checkPath(env.getBestTour()));
 
-        clog << " *** " << LOG_SEP;
-        clog << tsp.getName() << LOG_SEP;
-        clog << mapWorkers << LOG_SEP;
-        clog << farmWorkers << LOG_SEP;
-        clog << maxEpoch << LOG_SEP;
-        clog << getTimerMS() << LOG_SEP;
-        clog << getTimerUS() << LOG_SEP;
-        clog << env.getBestTourLength() << LOG_SEP;
-        clog << ( ! tsp.checkPath(env.getBestTour()) ? "Y" : "N");
-        clog << endl;
-    
     } else {
 
-        cout << "***** ACO FastFlow *****" << endl;
+        std::cout << "***** ACO FastFlow *****" << std::endl;
         Environment< D_TYPE, std::atomic<D_TYPE> > env(tsp.getNCities(), tsp.getNCities(), tsp.getEdges());
         AcoFF< D_TYPE, std::atomic<D_TYPE> > acoff(params, env, mapWorkers, farmWorkers);
         startTimer();
@@ -83,17 +69,7 @@ int main(int argc, char * argv[]) {
         stopAndPrintTimer();
 
         printMatrixV("bestTour", env.getBestTour(), 1, env.nCities, 0);
-
-        clog << " *** " << LOG_SEP;
-        clog << tsp.getName() << LOG_SEP;
-        clog << mapWorkers << LOG_SEP;
-        clog << farmWorkers << LOG_SEP;
-        clog << maxEpoch << LOG_SEP;
-        clog << getTimerMS() << LOG_SEP;
-        clog << getTimerUS() << LOG_SEP;
-        clog << env.getBestTourLength() << LOG_SEP;
-        clog << ( ! tsp.checkPath(env.getBestTour()) ? "Y" : "N");
-        clog << endl;
+        printResult(tsp.getName(), mapWorkers, farmWorkers, maxEpoch, getTimerMS(), getTimerUS(), env.getBestTourLength(), !tsp.checkPath(env.getBestTour()));
     }
 
   return 0;

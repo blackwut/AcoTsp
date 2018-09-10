@@ -164,7 +164,8 @@ public:
     }
     
 
-    bool checkPath(const std::vector<uint32_t> & path) const {
+    template <typename P>
+    bool checkPath(const P path) const {
         
         bool success = true;
         std::vector<uint32_t> duplicate(nCities, 0);
@@ -235,11 +236,11 @@ public:
         return edges;
     }
 
-    const uint32_t getNCities() const {
+    uint32_t getNCities() const {
         return nCities;
     }
 
-    const string getName() const{
+    const string & getName() const{
         return name;
     }
     
