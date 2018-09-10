@@ -113,7 +113,7 @@ private:
     const uint32_t farmWorkers;
     std::vector< Ant<T> > ants;
 
-    ff_Farm<>            * farmTour;
+    ff_Farm<T, D>        * farmTour;
     Emitter<T, D>        * emitterTour;
     ParallelForReduce<T> pfr;
     ParallelForReduce< Ant<T> * > pfrAnts;
@@ -215,7 +215,7 @@ private:
     pfr        (mapWorkers),
     pfrAnts    (mapWorkers)
     {
-        farmTour = new ff_Farm<>( [&]() {
+        farmTour = new ff_Farm<T, D>( [&]() {
             std::vector< unique_ptr<ff_node> > workers;
             for(uint32_t i = 0; i < farmWorkers; ++i)
                 workers.push_back( make_unique< Worker<T, D> >(params, env) );

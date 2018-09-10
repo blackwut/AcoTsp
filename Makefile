@@ -1,6 +1,6 @@
 CXX			= g++
 # CPP7 		= /usr/local/Cellar/gcc\@7/7.3.0/bin/c++-7
-CXXFLAGS	= -std=c++14 -O3 -Wall -pedantic #-fsanitize=thread #-Waligned-new=none
+CXXFLAGS	= -std=c++14 -O3 -Wall -pedantic -faligned-new#-fsanitize=thread #-Waligned-new=none
 INCLUDES	= -I . -I ~/Projects/fastflow
 LIBS		= -lpthread
 
