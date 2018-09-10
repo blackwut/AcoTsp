@@ -19,7 +19,6 @@ tspArray=(
 )
 
 mapThreads=(
-	1
 	2
 	4
 	8
@@ -29,7 +28,6 @@ mapThreads=(
 )
 
 farmThreads=(
-	1
 	2
 	4
 	8

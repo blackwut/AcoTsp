@@ -6,6 +6,7 @@
 #include <thread>
 #include <chrono>
 
+#include <vector_types.h>
 #include <curand.h>
 #include <curand_kernel.h>
 #include <cooperative_groups.h>
@@ -124,6 +125,34 @@ float scanWarpFloat(const uint32_t tid, float x) {
     return x;
 }
 
+__device__ __forceinline__
+float scanWarpFloatVec(const uint32_t tid, float x, const uint32_t n) {
+    #pragma unroll
+    for( uint32_t offset = 1 ; offset < n ; offset <<= 1 ) {
+        const float y = __shfl_up_sync(FULL_MASK, x, offset);
+        if(tid >= offset) x += y;
+    }
+    return x;
+}
+
+
+__device__ __forceinline__
+void initializeVisited(uchar4 * visited, const uint32_t tid, const uint32_t cols) {
+    for (uint32_t i = tid; i < cols; i += 32) {
+            visited[i] = make_uchar4(1, 1, 1, 1);
+        }
+}
+
+__device__ __forceinline__
+void initializeP(float4 * p, const float4 * fitness, const uchar4 * visited, const uint32_t tid, const uint32_t i, const uint32_t cols) {
+    for (uint32_t pid = tid; pid < cols; pid += 32) {
+        const float4 f = fitness[i * cols + pid];
+        const uchar4 v = visited[pid];
+        p[pid] = make_float4(f.x * v.x, f.y * v.y, f.z * v.z, f.w * v.w);
+    }
+}
+
+
 __global__
 void calcTour(uint32_t * tabu,
               const float * fitness,
@@ -141,9 +170,11 @@ void calcTour(uint32_t * tabu,
 
     for (uint32_t ant = blockIdx.x; ant < rows; ant += gridDim.x) {
 
-        for (uint32_t i = tid; i < alignedCols; i += 32) {
-            v[i] = 1;
-        }
+        // for (uint32_t i = tid; i < alignedCols; i += 32) {
+        //     v[i] = 1;
+        // }
+        initializeVisited((uchar4 *) v, tid, alignedCols >> 2);
+
         __syncwarp();
 
         if (tid == 0) {
@@ -152,26 +183,42 @@ void calcTour(uint32_t * tabu,
             v[kappa] = 0;
             tabu[ant * alignedCols] = kappa;
         }
-        
 
         for (uint32_t s = 1; s < cols; ++s) {
             __syncwarp(); // sync warp once for tabu initialization and then for *k value update
             // get city from shared memory
             const uint32_t kappa = *k;
 
-            for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
-                p[pid] =  fitness[kappa * alignedCols + pid] * v[pid];
-            }
-            __syncwarp();
+            // for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
+            //     p[pid] =  fitness[kappa * alignedCols + pid] * v[pid];
+            // }
+
+            initializeP((float4 *)p, (float4 *)fitness, (uchar4 *)v, tid, kappa, alignedCols >> 2);
+
+            // __syncwarp();
+
+            // float sum = 0.0;
+            // float4 * fitness4 = (float4 *)fitness;
+            // float4 * p4 = (float4 *) p;
+            // uchar4 * visited4 = (uchar4 *) v;
+            // for (uint32_t pid = tid; pid < (alignedCols >> 2); pid += 32) {
+            //     const float4 f = fitness4[kappa * cols + pid];
+            //     const uchar4 v = visited4[pid];
+            //     const float4 val = make_float4(f.x * v.x, f.y * v.y, f.z * v.z, f.w * v.w);
+            //     const float sumVal = val.x + val.y + val.z + val.w;
+            //     const float y = sum + scanWarpFloat(tid, sumVal);
+            //     // p4[pid] = make_float4(y - val.y - val.z - val.w, y - val.z - val.w, y - val.w, y);
+            //     p4[pid] = make_float4(y, y, y, y);
+            //     sum = __shfl_sync(FULL_MASK, y, 31);
+            // }
 
             float sum = 0.0;
             for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
-                const float x = p[pid];
+                const float x = p[pid];//fitness[kappa * alignedCols + pid] * v[pid];
                 const float y = sum + scanWarpFloat(tid, x);
                 p[pid] = y;
                 sum = __shfl_sync(FULL_MASK, y, 31);
             }
-            __syncwarp();
 
             float randomFloat = -1.0;
             if (tid == 0) {

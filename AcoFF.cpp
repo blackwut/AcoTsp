@@ -64,7 +64,7 @@ struct Worker: ff_node_t< Ant<T> > {
         return distribution->operator()(*generator);
     }
     
-    T atomic_addf(atomic<T> * f, T value){
+    inline T atomic_addf(atomic<T> * f, T value){
         T old = f->load(std::memory_order_consume);
         T desired = old + value;
         while (!f->compare_exchange_weak(old, desired, std::memory_order_release, std::memory_order_consume)) {
@@ -127,6 +127,7 @@ private:
             const T edgeVal = edges[i];
             eta[i] = (edgeVal == 0.0 ? 0.0 : 1.0 / edgeVal);
         });
+        pfr.threadPause();
     }
 
     void calcFitness(std::vector<T> & fitness,
@@ -140,6 +141,7 @@ private:
         pfr.parallel_for(0L, elems, [&](const long i) {
             fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
         });
+        pfr.threadPause();
     }
 
     void calcTour() {
@@ -168,6 +170,7 @@ private:
                                 [](Ant<T> * minAnt, Ant<T> * ant) { 
                                    if (*ant < *minAnt) minAnt = ant;
                                 });
+        pfrAnts.threadPause();
 
         std::copy ( bestAnt->getTabu().begin(), bestAnt->getTabu().end(), bestTour.begin() );
         bestTourLength = bestAnt->getTourLength();
@@ -178,11 +181,13 @@ private:
     }
 
     void resetDelta(std::vector<D> & delta,
-                    const uint32_t nCities) {
+                    const uint32_t nCities)
+    {
         const uint32_t elems = nCities * nCities;
         pfr.parallel_for(0L, elems, [&](const long i) {
             delta[i] = 0.0;
         });
+        pfr.threadPause();
     }
 
     void updatePheromone(std::vector<T> & pheromone,
@@ -193,6 +198,7 @@ private:
         pfr.parallel_for(0L, elems, [&](const long i) {
             pheromone[i] = pheromone[i] * rho + delta[i];
         });
+        pfr.threadPause();
     }
 
     public:
@@ -220,6 +226,7 @@ private:
         farmTour->add_emitter(*emitterTour);
         farmTour->remove_collector();
         farmTour->wrap_around();
+        farmTour->set_scheduling_ondemand();
 
         initEta(env.eta, env.edges, env.nCities);
     }
