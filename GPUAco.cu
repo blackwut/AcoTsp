@@ -183,9 +183,12 @@ void calcTour(uint32_t * tabu,
             for (uint32_t pid = tid; pid < alignedCols; pid += 32) {
                 
                 // const float prevP = (pid == 0 ? 0.0 : p[pid - 1]);
-                const float currP = p[pid];
+                // const float currP = p[pid];
                 // const float magicProbability = (prevP - probability) * (currP - probability);
-                // const float magicProbability = currP - probability;
+                // const uint32_t ballotMask = __ballot_sync(FULL_MASK,  magicProbability <= 0);
+                // const uint32_t winner = __ffs(ballotMask);
+
+                const float currP = p[pid];
                 const uint32_t ballotMask = __ballot_sync(FULL_MASK,  probability <= currP);
                 const uint32_t winner = __ffs(ballotMask);
 

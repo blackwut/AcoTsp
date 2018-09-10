@@ -8,6 +8,7 @@
 #include <string>
 #include <ctime>
 #include <chrono>
+#include <vector>
 
 using namespace std;
 

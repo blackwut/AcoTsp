@@ -13,7 +13,7 @@ $(ACOCPU): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(OBJS) -o $(ACOCPU) $(LIBS)
 
 $(ACOGPU): GPUAco.cu TSP.o
-	nvcc -Xptxas="-v" -O3 -g -lineinfo $< -o $@
+	nvcc -Xptxas="-v" -O3 -lineinfo $< -o $@
 
 %.o : %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $<  -o $@
