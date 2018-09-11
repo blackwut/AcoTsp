@@ -198,7 +198,7 @@ public:
             }
         }
 
-        return false;
+        return success;
     }
 
     T calculatePathLength(const std::vector<uint32_t> & path) const {
