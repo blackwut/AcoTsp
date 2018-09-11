@@ -1,46 +1,23 @@
-CXX			:= g++ 
-CXX_FLAGS	:= -O3 -g -std=c++14 -pedantic -Wall -Waligned-new=none 
-INCLUDES	:=-I . ~/Projects/fastflow/
-LD_FLAGS	:= -pthread
-
-OBJECTS_CPU = main.cpp ACO.o TSP.o AcoCpu.o AcoFF.o
-OBJECTS_GPU = GPUAco.cu ACO.o TSP.o
-
-acocpu: $(OBJECTS_CPU)
-	$(CXX) $(CXX_FLAGS) $< -o $@ $(LD_FLAGS)
-
-acogpu: $(OBJECTS_GPU)
-	nvcc -Xptxas="-v" -O3 -g -lineinfo $< -o $@
-
-acocpu_san: $(OBJECTS_CPU)
-	$(CXX) $(CXX_FLAGS) -fsanitize=thread $< -o $@ $(LD_FLAGS)
-
-%.o: %.cxx
-	$(CXX) $(CXX_FLAGS) -c $(input) -o $(output)
-
-clean:
-	rm -f acocpu acogpu *.o
-
-# CXX 		= g++
+CXX			= g++
 # CPP7 		= /usr/local/Cellar/gcc\@7/7.3.0/bin/c++-7
-# CXX_FLAGS	= -O3 -g -std=c++14 -pedantic -Wall -Waligned-new=none -I ~/Projects/fastflow/
-# LD_FLAGS	= -pthread
+CXXFLAGS	= -std=c++14 -O3 -Wall -pedantic #-faligned-new #-fsanitize=thread #-Waligned-new=none
+INCLUDES	= -I . -I ~/Projects/fastflow
+LIBS		= -lpthread
 
-# OBJECTS_CPU = main.cpp ACO.cpp TSP.cpp AcoCpu.cpp AcoFF.cpp common.hpp
-# OBJECTS_GPU = GPUAco.cu common.hpp TSP.cpp Aco.cpp
+OBJS	= main.cpp TSP.o Environment.o Parameters.o Ant.o AcoCpu.o AcoFF.o
+ACOCPU	= acocpu
+ACOGPU	= acogpu
 
-# acocpu: $(OBJECTS_CPU)
-# 	$(CXX) $(CXX_FLAGS) $< -o $@ $(LD_FLAGS)
+$(ACOCPU): $(OBJS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) main.cpp -o $(ACOCPU) $(LIBS)
 
-# acocpu7: $(OBJECTS_CPU)
-# 	$(CPP7) $(CXX_FLAGS) $< -o $@ $(LD_FLAGS)
+$(ACOGPU): GPUAco.cu TSP.cpp
+	nvcc -Xptxas="-v" -O3 -lineinfo -c TSP.cpp -o TSP.o
+	nvcc -Xptxas="-v" -O3 -lineinfo GPUAco.cu -o $@
 
+%.o : %.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
-# acogpu: $(OBJECTS_GPU)
-# 	nvcc -Xptxas="-v" -O3 -g -lineinfo $< -o $@
-
-# acocpu_san: $(OBJECTS_CPU)
-# 	$(CXX) $(CXX_FLAGS) -fsanitize=thread $< -o $@ $(LD_FLAGS)
-
-# clean:	
-# 	rm -f acocpu acogpu
+.PHONY: clean
+clean:
+	$(RM) -f *.o *~ $(ACOCPU) $(ACOGPU)
