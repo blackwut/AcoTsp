@@ -53,6 +53,24 @@ private:
                 pVal = sum;
             }
 
+#if 1
+            uint32_t l = 0;
+            uint32_t r = nCities - 1;
+
+            const T probability = nextRandom() * sum;
+            while (l < r) {
+                const uint32_t m = (l + r) / 2;
+                if ( p[m] < probability ){
+                    l = m + 1;
+                } else {
+                    r = m;
+                }
+            }
+
+            k = l;
+            tabu[s] = k;
+            visited[k] = 0;
+#else 
             const T r = nextRandom() * sum;
             bP = p.begin();
             while ( bP != p.end() ) {
@@ -64,6 +82,7 @@ private:
                     break;
                 }
             }
+#endif
         }
     }
 
