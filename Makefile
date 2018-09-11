@@ -20,4 +20,4 @@ $(ACOGPU):
 
 .PHONY: clean
 clean:
-	$(RM) -f *.o *~ $(ACOCPU) $(ACOGPU)
+	$(RM) *.o *~ $(ACOCPU) $(ACOGPU)
