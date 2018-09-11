@@ -57,7 +57,7 @@ int main(int argc, char * argv[]) {
         stopAndPrintTimer();
 
         printMatrixV("bestTour", env.getBestTour(), 1, env.nCities, 0);
-        printResult(tsp.getName(), mapWorkers, farmWorkers, maxEpoch, getTimerMS(), getTimerUS(), env.getBestTourLength(), !tsp.checkPath(env.getBestTour()));
+        printResult(tsp.getName(), mapWorkers, farmWorkers, maxEpoch, getTimerMS(), getTimerUS(), env.getBestTourLength(), tsp.checkPath(env.getBestTour()));
 
     } else {
 
@@ -69,7 +69,7 @@ int main(int argc, char * argv[]) {
         stopAndPrintTimer();
 
         printMatrixV("bestTour", env.getBestTour(), 1, env.nCities, 0);
-        printResult(tsp.getName(), mapWorkers, farmWorkers, maxEpoch, getTimerMS(), getTimerUS(), env.getBestTourLength(), !tsp.checkPath(env.getBestTour()));
+        printResult(tsp.getName(), mapWorkers, farmWorkers, maxEpoch, getTimerMS(), getTimerUS(), env.getBestTourLength(), tsp.checkPath(env.getBestTour()));
     }
 
   return 0;

@@ -181,11 +181,11 @@ public:
                 std::clog << "Illegal FROM city in position: " << i << "!"<< std::endl;
                 success = false;
             }
-            if (success == 0 && to >= nCities) {
+            if (success == true && to >= nCities) {
                 std::clog << "Illegal TO city in position: " << i + 1 << "!"<< std::endl;
                 success = false;
             }
-            if (success == 0 && _edges(from, to) <= 0) {
+            if (success == true && _edges(from, to) <= 0) {
                 std::clog << "Path impossibile: " << from << " -> " << to << std::endl;
                 success = false;
             }
