@@ -19,6 +19,7 @@ tspArray=(
 )
 
 mapThreads=(
+	1
 	2
 	4
 	8
@@ -28,6 +29,7 @@ mapThreads=(
 )
 
 farmThreads=(
+	1
 	2
 	4
 	8
@@ -46,7 +48,7 @@ do
 			for k in `seq 1 10`;
 			do
 	#		./acocpu file.tsp			alpha	beta   	q	rho	maxEpoch 	mapThreads	farmThreads
-			./acocpu $tspBase$problem	1		2		1	0.5	25			$i			$j
+			./acocpu $tspBase$problem	1		2		1	0.5	16			$i			$j
 			done
 		done
 	done
