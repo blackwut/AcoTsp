@@ -10,8 +10,6 @@
 #include <chrono>
 #include <vector>
 
-using namespace std;
-
 #define MAX_LEN 256
 static uint64_t randomSeed = time(0);
 
@@ -48,7 +46,7 @@ inline double parseArg(char * arg) {
 }
 
 template <typename T>
-inline void printMatrix(string name, T * matrix, uint32_t rows, uint32_t cols) {
+inline void printMatrix(const std::string name, T * matrix, uint32_t rows, uint32_t cols) {
 
     std::cout << "**** " << name << " ****" << std::endl;
     for (uint32_t i = 0; i < rows; ++i) {
@@ -60,7 +58,7 @@ inline void printMatrix(string name, T * matrix, uint32_t rows, uint32_t cols) {
 }
 
 template <typename T>
-inline void printMatrixV(const string name,
+inline void printMatrixV(const std::string name,
                   const std::vector<T> & matrix,
                   const uint32_t rows,
                   const uint32_t cols,
@@ -97,7 +95,7 @@ inline long getTimerUS() {
 inline void printTimer() {
     const long msec = getTimerMS();
     const long usec = getTimerUS();
-    cout << "Compute time: " << msec << " ms " << usec << " usec " << endl;
+    std::cout << "Compute time: " << msec << " ms " << usec << " usec " << std::endl;
 }
 
 inline void stopAndPrintTimer() {
@@ -105,32 +103,37 @@ inline void stopAndPrintTimer() {
     printTimer();
 }
 
-inline void stopAndPrintTimer(string name) {
+inline void stopAndPrintTimer(const std::string name) {
     stopTimer();
-    cout << name;
+    std::cout << name;
     printTimer();
 }
 
 template <typename T>
-inline void printResult(const string & name,
+inline void printResult(const std::string & name,
                         const uint32_t mapWorkers,
                         const uint32_t farmWorkers,
                         const uint32_t maxEpoch,
                         const long     timeMS,
                         const long     timeUS,
                         const T        bestTourLength,
-                        const bool     checkPath)
+                        const T        tspTourLength,
+                        const bool     checkTour)
 {
 #define LOG_SEP " "
-    std::clog << " *** "       << LOG_SEP
-    << name                    << LOG_SEP
-    << mapWorkers              << LOG_SEP
-    << farmWorkers             << LOG_SEP
-    << maxEpoch                << LOG_SEP
-    << timeMS                  << LOG_SEP
-    << timeUS                  << LOG_SEP
-    << bestTourLength          << LOG_SEP
-    << (checkPath ? "Y" : "N") << LOG_SEP
+    std::clog << std::fixed 
+    << " *** "                                       << LOG_SEP
+    << name                                          << LOG_SEP
+    << mapWorkers                                    << LOG_SEP
+    << farmWorkers                                   << LOG_SEP
+    << maxEpoch                                      << LOG_SEP
+    << timeMS                                        << LOG_SEP
+    << timeUS                                        << LOG_SEP
+    << bestTourLength                                << LOG_SEP
+    << (checkTour ? "Y" : "N")                       << LOG_SEP
+    << (bestTourLength == tspTourLength ? "Y" : "N") << LOG_SEP
+    << bestTourLength                                << LOG_SEP
+    << tspTourLength                                 << LOG_SEP
     << std::endl;
 }
 

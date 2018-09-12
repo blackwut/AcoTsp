@@ -55,7 +55,7 @@ struct Worker: ff_node_t< Ant<T> > {
     env   (env)
     {}
     
-    inline T atomic_addf(atomic<T> * f, T value) {
+    inline T atomic_addf(std::atomic<T> * f, T value) {
         T old = f->load(std::memory_order_consume);
         T desired = old + value;
         while (!f->compare_exchange_weak(old, desired, 
@@ -203,7 +203,7 @@ private:
     pfrAnts    (mapWorkers)
     {
         farmTour = new ff_Farm<T, D>( [&]() {
-            std::vector< unique_ptr<ff_node> > workers;
+            std::vector< std::unique_ptr<ff_node> > workers;
             for(uint32_t i = 0; i < farmWorkers; ++i)
                 workers.push_back( make_unique< Worker<T, D> >(params, env) );
             return workers;

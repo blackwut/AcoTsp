@@ -49,18 +49,18 @@ private:
     
     uint32_t nCities;
     std::vector<T> edges;
-    string name;
-    string type;
-    string edgeWeightType;
-    string edgeWieghtFormat;
-    string nodeCoordType;
-    string displayDataType;
+    std::string name;
+    std::string type;
+    std::string edgeWeightType;
+    std::string edgeWieghtFormat;
+    std::string nodeCoordType;
+    std::string displayDataType;
 
     void initEdges(const uint32_t size) {
         edges.resize(size, 0.0);
     }
     
-    void readEdgesFromNodes(ifstream & in) {
+    void readEdgesFromNodes(std::ifstream & in) {
         
         if (TWOD_COORDS == nodeCoordType || nodeCoordType == "") {
             
@@ -84,25 +84,25 @@ private:
                     } else if ( edgeWeightType == MAN_2D ) {
                         _edges(i, j) = round( abs(xd) + abs(yd) );
                     } else if ( edgeWeightType == MAX_2D ) {
-                        _edges(i, j) = max( round(abs(xd)), round(abs(yd)) );
+                        _edges(i, j) = std::max( round(abs(xd)), round(abs(yd)) );
                     } else if ( edgeWeightType == ATT ) {
                         const T rij = sqrt( (xd * xd + yd * yd) / 10.0 );
                         const T tij = round( rij );
                         _edges(i, j) = tij + (tij < rij);
                     } else {
-                        std::clog << EDGE_WEIGHT_TYPE << ": " << edgeWeightType << " not supported!" << std::endl;
+                        std::cout << EDGE_WEIGHT_TYPE << ": " << edgeWeightType << " not supported!" << std::endl;
                         exit(EXIT_EDGE_WEIGHT_TYPE);
                     }
                 }
             }
 
         } else {
-            std::clog << NODE_COORD_TYPE << ": " << nodeCoordType <<" not supported!" << std::endl;
+            std::cout << NODE_COORD_TYPE << ": " << nodeCoordType <<" not supported!" << std::endl;
             exit(EXIT_NODE_COORD_TYPE);
         }
     }
     
-    void readEdgesFromEdges(ifstream &in) {
+    void readEdgesFromEdges(std::ifstream &in) {
         
         initEdges(nCities * nCities);
         
@@ -124,19 +124,19 @@ private:
             }
             
         } else {
-            std::clog << EDGE_WEIGHT_FORMAT << ": " << edgeWieghtFormat << " not supported!" << std::endl;
+            std::cout << EDGE_WEIGHT_FORMAT << ": " << edgeWieghtFormat << " not supported!" << std::endl;
             exit(EXIT_EDGE_WEIGHT_FORMAT);
         }
     }
     
 public:
     
-    TSP(const string & filename) {
-        string buffer = "";
+    TSP(const std::string & filename) {
+        std::string buffer = "";
         
-        ifstream in(filename);
+        std::ifstream in(filename);
         if ( !in ) {
-            std::clog << "Error while loading TSP file: " << filename << std::endl;
+            std::cout << "Error while loading TSP file: " << filename << std::endl;
             exit(EXIT_LOAD_TSP_FILE);
         }
         
@@ -165,7 +165,7 @@ public:
     
 
     template <typename P>
-    bool checkPath(const P path) const {
+    bool checkTour(const P path) const {
         
         bool success = true;
         std::vector<uint32_t> duplicate(nCities, 0);
@@ -178,22 +178,22 @@ public:
             duplicate[to] += 1;
 
             if (from >= nCities) {
-                std::clog << "Illegal FROM city in position: " << i << "!"<< std::endl;
+                std::cout << "Illegal FROM city in position: " << i << "!"<< std::endl;
                 success = false;
             }
             if (success == true && to >= nCities) {
-                std::clog << "Illegal TO city in position: " << i + 1 << "!"<< std::endl;
+                std::cout << "Illegal TO city in position: " << i + 1 << "!"<< std::endl;
                 success = false;
             }
             if (success == true && _edges(from, to) <= 0) {
-                std::clog << "Path impossibile: " << from << " -> " << to << std::endl;
+                std::cout << "Path impossibile: " << from << " -> " << to << std::endl;
                 success = false;
             }
         }
 
         for (uint32_t i = 0; i < nCities; ++i) {
             if (duplicate[i] > 1) {
-                std::clog << "Duplicate city: " << i << std::endl;
+                std::cout << "Duplicate city: " << i << std::endl;
                 success = false;
             }
         }
@@ -202,7 +202,7 @@ public:
     }
 
     template <typename P>
-    T calculatePathLength(const P path) const {
+    T calcTourLength(const P path) const {
         
         T totalLength = 0;
         for (uint32_t i = 0; i < nCities - 1; ++i) {
@@ -241,7 +241,7 @@ public:
         return nCities;
     }
 
-    const string & getName() const{
+    const std::string & getName() const{
         return name;
     }
     

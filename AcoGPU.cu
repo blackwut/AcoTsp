@@ -19,7 +19,7 @@ using namespace cooperative_groups;
 inline void cudaAssert(cudaError_t code, const char * file, uint32_t line, bool abort = true)
 {
     if (code != cudaSuccess) {
-        std::clog <<  "cudaErrorAssert: "<< cudaGetErrorString(code) << " " << file << " " << line << std::endl;
+        std::cout <<  "cudaErrorAssert: "<< cudaGetErrorString(code) << " " << file << " " << line << std::endl;
         if (abort) { 
             exit(code);
         }
@@ -389,7 +389,7 @@ int main(int argc, char * argv[]) {
     int maxEpoch = 1;
     
     if (argc < 7) {
-        cout << "Usage: ./acogpu file.tsp alpha beta q rho maxEpoch" << endl;
+        std::cout << "Usage: ./acogpu file.tsp alpha beta q rho maxEpoch" << std::endl;
         exit(-1);
     }
 
@@ -563,11 +563,15 @@ int main(int argc, char * argv[]) {
 
     stopAndPrintTimer();
     printMatrix("bestTour", bestTour, 1, nCities);
-    printResult(tsp.getName(), 0, 0, maxEpoch, getTimerMS(), getTimerUS(), *bestTourLength, tsp.checkPath(bestTour));
-
-    if ( *bestTourLength != tsp.calculatePathLength(bestTour) ) {
-        std::cout << "Huston we have a problem!" << std::endl;
-    }
+    printResult(tsp.getName(),
+                    0,
+                    0,
+                    maxEpoch,
+                    getTimerMS(),
+                    getTimerUS(),
+                    *bestTourLength,
+                    tsp.calcTourLength(bestTour),
+                    tsp.checkTour(bestTour));
 
     cudaFree(randState);
     cudaFree(edges);
