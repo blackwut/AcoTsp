@@ -6,6 +6,7 @@ LIBS		= -lpthread
 OBJS	= main.cpp TSP.o Environment.o Parameters.o Ant.o AcoCPU.o AcoFF.o
 ACOCPU	= acocpu
 ACOGPU	= acogpu
+STATS	= stats
 
 $(ACOCPU): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) main.cpp -o $(ACOCPU) $(LIBS)
@@ -14,9 +15,13 @@ $(ACOGPU): AcoGPU.cu TSP.cpp
 	nvcc -Xptxas="-v" -O3 -lineinfo -c TSP.cpp -o TSP.o
 	nvcc -Xptxas="-v" -O3 -lineinfo AcoGPU.cu -o $@
 
+
+$(STATS): stats.cpp
+	$(CXX) $(CXXFLAGS) stats.cpp -o $(STATS)
+
 %.o : %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 .PHONY: clean
 clean:
-	$(RM) *.o *~ $(ACOCPU) $(ACOGPU)
+	$(RM) *.o *~ $(ACOCPU) $(ACOGPU) $(STATS)

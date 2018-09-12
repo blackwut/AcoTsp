@@ -149,7 +149,7 @@ private:
 
     void updateBestTour(std::vector<uint32_t> & bestTour,
                         T & bestTourLength)
-    {    
+    {
         Ant<T> maxAnt(0);
         Ant<T> * bestAnt = &ants[0];
         pfrAnts.parallel_reduce(bestAnt,
@@ -188,7 +188,7 @@ private:
         pfr.threadPause();
     }
 
-    public:
+public:
 
     AcoFF(const Parameters<T> & params,
           Environment<T, D> & env,

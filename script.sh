@@ -31,6 +31,7 @@ mapThreads=(
     16
     32
     64
+    128
 )
 
 farmThreads=(
@@ -48,14 +49,14 @@ do
     echo $problem;
     for i in "${mapThreads[@]}"
     do
-        for j in "${farmThreads[@]}"
-        do
+        # for j in "${farmThreads[@]}"
+        # do
             for k in `seq 1 10`;
             do
     #       ./acocpu file.tsp           alpha   beta    q   rho maxEpoch    mapThreads  farmThreads
-            ./acocpu $tspBase$problem   1       2       1   0.5 16          $i          $j
+            ./acocpu $tspBase$problem   1       2       1   0.5 16           $i          $i
             done
-        done
+        # done
     done
 done
 

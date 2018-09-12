@@ -386,21 +386,25 @@ int main(int argc, char * argv[]) {
     float beta = 2.0f;
     float q = 1.0f;
     float rho = 0.5f;
-    int maxEpoch = 1;
+    uint32_t maxEpoch = 1;
+    uint32_t nAntsPerWarp = 8;
+    uint32_t threadsPerBlock = 128;
+
     
-    if (argc < 7) {
-        std::cout << "Usage: ./acogpu file.tsp alpha beta q rho maxEpoch" << std::endl;
+    if (argc < 8) {
+        std::cout << "Usage: ./acogpu file.tsp alpha beta q rho maxEpoch nAntsPerWarp" << std::endl;
         exit(-1);
     }
 
     argc--;
     argv++;
-    path     = argv[0];
-    alpha    = parseArg<float>   (argv[1]);
-    beta     = parseArg<float>   (argv[2]);
-    q        = parseArg<float>   (argv[3]);
-    rho      = parseArg<float>   (argv[4]);
-    maxEpoch = parseArg<uint32_t>(argv[5]);
+    path         = argv[0];
+    alpha        = parseArg<float>   (argv[1]);
+    beta         = parseArg<float>   (argv[2]);
+    q            = parseArg<float>   (argv[3]);
+    rho          = parseArg<float>   (argv[4]);
+    maxEpoch     = parseArg<uint32_t>(argv[5]);
+    nAntsPerWarp = parseArg<uint32_t>(argv[6]);
 
     TSP<float> tsp(path);
 
@@ -493,17 +497,17 @@ int main(int argc, char * argv[]) {
     }
 
     // Curand 
-    const dim3 initRandBlock(128);
+    const dim3 initRandBlock( threadsPerBlock );
     const dim3 initRandGrid( numberOfBlocks(randStateElems, initRandBlock.x) );
     initCurand <<< initRandGrid, initRandBlock >>>(randState, seed, alignedAnts);
     cudaCheck( cudaGetLastError() );
     // Eta
-    const dim3 initEtaBlock(128);
+    const dim3 initEtaBlock( threadsPerBlock );
     const dim3 initEtaGrid( numberOfBlocks(etaCols, initEtaBlock.x) );
     initEta <<<initEtaGrid, initEtaBlock >>>(eta, edges, etaRows, etaCols);
     cudaCheck( cudaGetLastError() );
     // Pheromone
-    const dim3 initPheroBlock(128);
+    const dim3 initPheroBlock( threadsPerBlock );
     const dim3 initPheroGrid( numberOfBlocks(pheromoneCols, initPheroBlock.x) );
     initPheromone <<<initPheroGrid, initPheroBlock>>> (pheromone, valPheromone, pheromoneRows, pheromoneCols);
     cudaCheck( cudaGetLastError() );
@@ -513,47 +517,47 @@ int main(int argc, char * argv[]) {
     uint32_t epoch = 0;
     do {
         // Delta
-        const dim3 initDeltaBlock(128);
+        const dim3 initDeltaBlock( threadsPerBlock );
         const dim3 initDeltaGrid( numberOfBlocks(deltaCols, initDeltaBlock.x) );
         initDelta <<<initDeltaGrid, initDeltaBlock>>> (delta, deltaRows, deltaCols);
         cudaCheck( cudaGetLastError() );
 
         // Fitness
-        const dim3 fitBlock(128);
+        const dim3 fitBlock( threadsPerBlock );
         const dim3 fitGrid( numberOfBlocks(fitnessCols, fitBlock.x) );
         calcFitness <<<fitGrid, fitBlock >>> (fitness, pheromone, eta, alpha, beta, fitnessRows, fitnessCols);
         cudaCheck( cudaGetLastError() );
 
         // Tour
-        const dim3 tourGrid( divUp(nAnts, 8) ); // max 8 due to vector type of order 4 and warpsize (32)
-        const dim3 tourBlock(32);
-        const uint32_t tourShared  = alignedCities  * sizeof(uint8_t) +   // v
-                                     alignedCities  * sizeof(float); // p
+        const dim3 tourGrid( divUp(nAnts, nAntsPerWarp) );
+        const dim3 tourBlock(32);   // must be 32
+        const uint32_t tourShared  = alignedCities  * sizeof(uint8_t) + // v
+                                     alignedCities  * sizeof(float);    // p
         calcTour <<<tourGrid, tourBlock, tourShared>>> (tabu, fitness, nAnts, tabuRows, tabuCols, randState);
         cudaCheck( cudaGetLastError() );
 
         // TourLength
-        const dim3 lenGrid(nAnts);
-        const dim3 lenBlock(32);
+        const dim3 lenGrid(nAnts);  // must be nAnts
+        const dim3 lenBlock( threadsPerBlock );
         const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
         calcTourLength <<<lenGrid, lenBlock, lenShared>>> (tourLength, edges, tabu, nAnts, alignedCities, nCities);
         cudaCheck( cudaGetLastError() );
 
         // Update best
-        const dim3 bestGrid(1);
-        const dim3 bestBlock(32);
+        const dim3 bestGrid(1);     // must be 1
+        const dim3 bestBlock(32);   // must be 32
         updateBestTour <<<bestGrid, bestBlock>>> (bestTour, bestTourLength, tabu, tourLength, nAnts, alignedCities);
         cudaCheck( cudaGetLastError() );
         
         // Update Delta
-        const dim3 deltaGrid(nAnts);
-        const dim3 deltaBlock(32);
+        const dim3 deltaGrid( nAnts );  //must be nAnts
+        const dim3 deltaBlock( threadsPerBlock );
         const uint32_t deltaShared = alignedCities * sizeof(uint32_t);
         updateDelta <<<deltaGrid, deltaBlock, deltaShared>>> (delta, tabu, tourLength, nAnts, alignedCities, nCities, q);
         cudaCheck( cudaGetLastError() );
 
         // Update Pheromone
-        const dim3 pheroBlock(32);
+        const dim3 pheroBlock( threadsPerBlock );
         const dim3 pheroGrid( numberOfBlocks(pheromoneCols, pheroBlock.x) );
         updatePheromone <<<pheroGrid, pheroBlock>>> (pheromone, delta, pheromoneRows, pheromoneCols, rho);
         cudaCheck( cudaGetLastError() );
