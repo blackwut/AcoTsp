@@ -201,7 +201,8 @@ public:
         return success;
     }
 
-    T calculatePathLength(const std::vector<uint32_t> & path) const {
+    template <typename P>
+    T calculatePathLength(const P path) const {
         
         T totalLength = 0;
         for (uint32_t i = 0; i < nCities - 1; ++i) {
