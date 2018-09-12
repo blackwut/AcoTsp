@@ -1,5 +1,4 @@
 CXX			= g++
-# CPP7 		= /usr/local/Cellar/gcc\@7/7.3.0/bin/c++-7
 CXXFLAGS	= -std=c++14 -O3 -Wall -pedantic #-faligned-new #-fsanitize=thread #-Waligned-new=none
 INCLUDES	= -I . -I ~/Projects/fastflow
 LIBS		= -lpthread
@@ -11,7 +10,7 @@ ACOGPU	= acogpu
 $(ACOCPU): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) main.cpp -o $(ACOCPU) $(LIBS)
 
-$(ACOGPU):
+$(ACOGPU): AcoGPU.cu TSP.cpp
 	nvcc -Xptxas="-v" -O3 -lineinfo -c TSP.cpp -o TSP.o
 	nvcc -Xptxas="-v" -O3 -lineinfo GPUAco.cu -o $@
 
