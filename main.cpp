@@ -31,10 +31,10 @@ int main(int argc, char * argv[]) {
     argc--;
     argv++;
     path     = argv[0];
-    alpha    = parseArg<float>   (argv[1]);
-    beta     = parseArg<float>   (argv[2]);
-    q        = parseArg<float>   (argv[3]);
-    rho      = parseArg<float>   (argv[4]);
+    alpha    = parseArg<D_TYPE>  (argv[1]);
+    beta     = parseArg<D_TYPE>  (argv[2]);
+    q        = parseArg<D_TYPE>  (argv[3]);
+    rho      = parseArg<D_TYPE>  (argv[4]);
     maxEpoch = parseArg<uint32_t>(argv[5]);
 
     if (argc > 7) {
@@ -45,7 +45,7 @@ int main(int argc, char * argv[]) {
     TSP<D_TYPE> tsp(path);
     Parameters<D_TYPE> params(alpha, beta, q, rho, maxEpoch);
 
-    bool parallelCondition = mapWorkers > 0 && farmWorkers > 0;
+    const bool parallelCondition = mapWorkers > 0 && farmWorkers > 0;
 
     if (!parallelCondition) {
         std::cout << "***** ACO CPU *****" << std::endl;

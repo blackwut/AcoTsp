@@ -75,7 +75,7 @@ private:
 
         for (Ant<T> & ant : ants) {
 
-            const float tau = q / ant.getTourLength();
+            const T tau = q / ant.getTourLength();
 
             auto bTabu = ant.getTabu().begin();
             const auto constbTabu = bTabu;

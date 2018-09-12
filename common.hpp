@@ -21,12 +21,14 @@ enum ERROR {
     EXIT_LOAD_TSP_FILE,
     EXIT_EDGE_WEIGHT_TYPE,
     EXIT_EDGE_WEIGHT_FORMAT,
-    EXIT_NODE_COORD_TYPE
+    EXIT_NODE_COORD_TYPE,
+    EXIT_RUN_FARM,
+    EXIT_WAIT_FREEZING_FARM
 };
 
 template <typename T>
 inline T parseArg(char * arg) {
-    clog << "Error: type not supported!" << endl;
+    std::clog << "Error: type not supported!" << std::endl;
     exit(EXIT_PARSE_ARG);
 }
 
@@ -48,12 +50,12 @@ inline double parseArg(char * arg) {
 template <typename T>
 inline void printMatrix(string name, T * matrix, uint32_t rows, uint32_t cols) {
 
-    cout << "**** " << name << " ****" << endl;
+    std::cout << "**** " << name << " ****" << std::endl;
     for (uint32_t i = 0; i < rows; ++i) {
         for (uint32_t j = 0; j < cols; ++j) {
-            cout << setw(3) << setprecision(3) << fixed << matrix[i * cols + j] << " ";
+            std::cout << std::setw(3) << std::setprecision(3) << std::fixed << matrix[i * cols + j] << " ";
         }
-        cout << endl;
+        std::cout << std::endl;
     }
 }
 
@@ -71,30 +73,6 @@ inline void printMatrixV(const string name,
         }
         std::cout << std::endl;
     }
-}
-
-template <typename T>
-inline bool compareArray(const string & name, T * left, T * right, uint32_t elems) {
-    for (uint32_t i = 0; i < elems; ++i) {
-        if (left[i] != right[i]) {
-            std::clog << "Error comparing array " << name << " at index ( " << i << " )" << std::endl;
-            return false;
-        }
-    }
-    return true;
-}
-
-template <typename T>
-inline bool compareMatrix(const string & name, T * left, T * right, uint32_t rows, uint32_t cols) {
-    for (uint32_t i = 0; i < rows; ++i) {
-        for (uint32_t j = 0; j < cols; ++j) {
-            if (left[i * cols + j] != right[i * cols + j]) {
-                std::clog << "Error comparing matrix " << name << " at index ( " << i << ", " << j << " )" << std::endl;
-                return false;
-            }
-        }
-    }
-    return true;
 }
 
 static std::chrono::high_resolution_clock::time_point startPoint;
@@ -117,8 +95,8 @@ inline long getTimerUS() {
 }
 
 inline void printTimer() {
-    long msec = getTimerMS();
-    long usec = getTimerUS();
+    const long msec = getTimerMS();
+    const long usec = getTimerUS();
     cout << "Compute time: " << msec << " ms " << usec << " usec " << endl;
 }
 
@@ -133,13 +111,14 @@ inline void stopAndPrintTimer(string name) {
     printTimer();
 }
 
+template <typename T>
 inline void printResult(const string & name,
                         const uint32_t mapWorkers,
                         const uint32_t farmWorkers,
                         const uint32_t maxEpoch,
                         const long     timeMS,
                         const long     timeUS,
-                        const float    bestTourLength,
+                        const T        bestTourLength,
                         const bool     checkPath)
 {
 #define LOG_SEP " "

@@ -2,6 +2,7 @@
 #include <limits>
 #include <cstddef>
 #include <atomic>
+#include <thread>
 
 #include <ff/parallel_for.hpp>
 #include <ff/farm.hpp>
@@ -49,36 +50,29 @@ struct Worker: ff_node_t< Ant<T> > {
     const Parameters<T> & params;
     Environment<T, D>   & env;
 
-    std::mt19937 * generator = NULL;
-    std::uniform_real_distribution<T> * distribution = NULL;
-
     Worker(const Parameters<T> & params, Environment<T, D> & env) :
     params(params),
     env   (env)
-    {
-        generator = new std::mt19937((unsigned int)time(0));
-        distribution = new std::uniform_real_distribution<T>(0, 1);
-    }
-
-    const T nextRandom() {
-        return distribution->operator()(*generator);
-    }
+    {}
     
-    inline T atomic_addf(atomic<T> * f, T value){
+    inline T atomic_addf(atomic<T> * f, T value) {
         T old = f->load(std::memory_order_consume);
         T desired = old + value;
-        while (!f->compare_exchange_weak(old, desired, std::memory_order_release, std::memory_order_consume)) {
+        while (!f->compare_exchange_weak(old, desired, 
+                                         std::memory_order_release,
+                                         std::memory_order_consume))
+        {
             desired = old + value;
         }
         return desired;
     }
     
-    Ant<T> * svc( Ant<T> * ant) {
+    Ant<T> * svc( Ant<T> * ant ) {
 
         if (ant == (Ant<T> * )EOS) return (Ant<T> * )EOS;
 
         ant->constructTour(env.fitness, env.edges);
-        const float tau = params.q / ant->getTourLength();
+        const T tau = params.q / ant->getTourLength();
 
         auto bTabu = ant->getTabu().begin();
         const auto constbTabu = bTabu;
@@ -97,10 +91,7 @@ struct Worker: ff_node_t< Ant<T> > {
         return ant;
     }
     
-    ~Worker() {
-        delete generator;
-        delete distribution;
-    }
+    ~Worker() {}
 };
 
 template <typename T, typename D>
@@ -147,12 +138,12 @@ private:
     void calcTour() {
         if (farmTour->run_then_freeze() < 0) {
             error("Running farm\n");
-            exit(-1);
+            exit(EXIT_RUN_FARM);
         }
 
         if (farmTour->wait_freezing() < 0) {
             error("Wait freezing farm\n");
-            exit(-1);
+            exit(EXIT_WAIT_FREEZING_FARM);
         }
     }
 
@@ -174,10 +165,6 @@ private:
 
         std::copy ( bestAnt->getTabu().begin(), bestAnt->getTabu().end(), bestTour.begin() );
         bestTourLength = bestAnt->getTourLength();
-
-        // const Ant<T> & bestAnt = *std::min_element(ants.begin(), ants.end());
-        // std::copy ( bestAnt.getTabu().begin(), bestAnt.getTabu().end(), bestTour.begin() );
-        // bestTourLength = bestAnt.getTourLength();
     }
 
     void resetDelta(std::vector<D> & delta,

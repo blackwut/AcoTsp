@@ -20,8 +20,8 @@ private:
     T tourLength;
 
     T nextRandom() {
-        static std::mt19937 generator(randomSeed);
-        static std::uniform_real_distribution<T> distribution(0.0f, 1.0f);
+        static thread_local std::mt19937 generator(randomSeed);
+        static thread_local std::uniform_real_distribution<T> distribution(0.0f, 1.0f);
         return distribution(generator);
     }
 
@@ -53,11 +53,10 @@ private:
                 pVal = sum;
             }
 
-#if 1
+            const T probability = nextRandom() * sum;
+            
             uint32_t l = 0;
             uint32_t r = nCities - 1;
-
-            const T probability = nextRandom() * sum;
             while (l < r) {
                 const uint32_t m = (l + r) / 2;
                 if ( p[m] < probability ){
@@ -70,19 +69,6 @@ private:
             k = l;
             tabu[s] = k;
             visited[k] = 0;
-#else 
-            const T r = nextRandom() * sum;
-            bP = p.begin();
-            while ( bP != p.end() ) {
-                const T pVal = *(bP++);
-                if (pVal >= r) {
-                    k          = bP - p.begin() - 1;
-                    tabu[s]    = k;
-                    visited[k] = 0;
-                    break;
-                }
-            }
-#endif
         }
     }
 
