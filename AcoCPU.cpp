@@ -11,7 +11,7 @@
 #include "common.hpp"
 
 template <typename T, typename D>
-class AcoCpu {
+class AcoCPU {
     
 private:
     const Parameters<T> & params;
@@ -110,7 +110,7 @@ private:
     
 public:
     
-    AcoCpu(const Parameters<T> & params, Environment<T, D> & env):
+    AcoCPU(const Parameters<T> & params, Environment<T, D> & env):
     params(params),
     env   (env),
     ants  (env.nAnts, Ant<T>(env.nCities))
@@ -129,7 +129,7 @@ public:
         } while ( ++epoch < params.maxEpoch );
     }
     
-    ~AcoCpu(){}
+    ~AcoCPU(){}
 };
 
 #endif

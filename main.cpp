@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cmath>
 
-#include "AcoCpu.cpp"
+#include "AcoCPU.cpp"
 #include "AcoFF.cpp"
 #include "TSP.cpp"
 #include "Parameters.cpp"
@@ -50,7 +50,7 @@ int main(int argc, char * argv[]) {
     if (!parallelCondition) {
         std::cout << "***** ACO CPU *****" << std::endl;
         Environment<D_TYPE, D_TYPE> env(tsp.getNCities(), tsp.getNCities(), tsp.getEdges());
-        AcoCpu<D_TYPE, D_TYPE> acocpu(params, env);
+        AcoCPU<D_TYPE, D_TYPE> acocpu(params, env);
 
         startTimer();
         acocpu.solve();

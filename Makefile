@@ -3,7 +3,7 @@ CXXFLAGS	= -std=c++14 -O3 -Wall -pedantic #-faligned-new #-fsanitize=thread #-Wa
 INCLUDES	= -I . -I ~/Projects/fastflow
 LIBS		= -lpthread
 
-OBJS	= main.cpp TSP.o Environment.o Parameters.o Ant.o AcoCpu.o AcoFF.o
+OBJS	= main.cpp TSP.o Environment.o Parameters.o Ant.o AcoCPU.o AcoFF.o
 ACOCPU	= acocpu
 ACOGPU	= acogpu
 
@@ -12,7 +12,7 @@ $(ACOCPU): $(OBJS)
 
 $(ACOGPU): AcoGPU.cu TSP.cpp
 	nvcc -Xptxas="-v" -O3 -lineinfo -c TSP.cpp -o TSP.o
-	nvcc -Xptxas="-v" -O3 -lineinfo GPUAco.cu -o $@
+	nvcc -Xptxas="-v" -O3 -lineinfo AcoGPU.cu -o $@
 
 %.o : %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
