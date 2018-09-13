@@ -56,7 +56,11 @@ void initEta(float * eta,
         for (uint32_t c = tid; c < cols; c += gridDim.x * blockDim.x) {
             const uint32_t id = r * cols + c;
             const float d = edges[id];
-            eta[id] = (d == 0.0) ? 0.0 : 1.0 / d;
+            if ( d == 0.0 ) {
+                eta[id] = 0.0;
+            } else {
+                eta[id] = __powf(d, -2.0);
+            }
         }
     }
 }
@@ -108,18 +112,17 @@ void calcFitness(float * fitness,
             const uint32_t id = r * cols + c;
             const float p = pheromone[id];
             const float e = eta[id];
-            fitness[id] = __powf(p, alpha) * __powf(e, beta);
+            fitness[id] = __powf(p, alpha) * e;//__powf(e, beta);
         }
     }
 }
 
-#define FULL_MASK 0xFFFFFFFF
 __device__ __forceinline__
-float scanWarpFloat(const uint32_t tid, float x) {
+float scanTileFloat(const thread_block_tile<32> & g, float x) {
     #pragma unroll
     for( uint32_t offset = 1 ; offset < 32 ; offset <<= 1 ) {
-        const float y = __shfl_up_sync(FULL_MASK, x, offset);
-        if(tid >= offset) x += y;
+        const float y = g.shfl_up(x, offset);
+        if(g.thread_rank() >= offset) x += y;
     }
     return x;
 }
@@ -132,10 +135,15 @@ void calcTour(uint32_t * tabu,
               const uint32_t alignedCols,
               curandStateXORWOW_t * state)
 {
+
+    thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
+    const uint32_t tid    = threadIdx.x;
+    const uint32_t tileId = tid / 32;
+    const uint32_t tiles  = blockDim.x / 32;
+
     extern __shared__ uint32_t smem[];
     uint8_t * v = (uint8_t *) smem;
-    float   * p = (float *)   &v[alignedCols];
-
+    float   * p = (float *)   &v[alignedCols * tiles];
     // Vector type aliases
     const float4 * _f4 = (float4 *) fitness;
     uchar4 * _v4 = (uchar4 *) v;
@@ -143,48 +151,53 @@ void calcTour(uint32_t * tabu,
     const uint32_t cols4 = alignedCols / 4;
 
 
-    const uint32_t tid = threadIdx.x;
+    for (uint32_t ant = tileId + (blockIdx.x * tiles); ant < rows; ant += (gridDim.x * tiles) ) {
 
-    for (uint32_t ant = blockIdx.x; ant < rows; ant += gridDim.x) {
-
-        for (uint32_t i = tid; i < cols4; i += 32) {
-            _v4[i] = make_uchar4(1, 1, 1, 1);
+        for (uint32_t i = tile32.thread_rank(); i < cols4; i += warpSize) {
+            _v4[tileId * cols4 + i] = make_uchar4(1, 1, 1, 1);
         }
-        __syncwarp();
+        tile32.sync();
 
         uint32_t kappa = 12345678;
-        if (tid == 0) {
+        if (tile32.thread_rank() == 0) {
             kappa = cols * randXOR(state + ant);
-            v[kappa] = 0;
+            v[tileId * alignedCols + kappa] = 0;
             tabu[ant * alignedCols] = kappa;
         }
-        kappa = __shfl_sync(FULL_MASK, kappa, 0);
-
+        tile32.sync();
+        kappa = tile32.shfl(kappa, 0);
 
         for (uint32_t s = 1; s < cols; ++s) {
-            float sum = 0.0f;
-            for (uint32_t pid = tid; pid < cols4; pid += 32) {
-                const float4 f4 = _f4[kappa * cols4 + pid];
-                const uchar4 v4 = _v4[pid];
-                const float4 p4 = make_float4(f4.x * v4.x,
-                                              f4.y * v4.y,
-                                              f4.z * v4.z,
-                                              f4.w * v4.w);
 
-                const float xP4 = p4.x + p4.y + p4.z + p4.w;
-                const float y   = sum + scanWarpFloat(tid, xP4);
-                _p4[pid] = make_float4( y - p4.y - p4.z - p4.w,
-                                        y        - p4.z - p4.w,
-                                        y               - p4.w,
-                                        y );
-                sum = __shfl_sync(FULL_MASK, y, 31);
+            for (uint32_t pid = tile32.thread_rank(); pid < cols4; pid += warpSize) {
+                const float4 f4 = _f4[kappa * cols4 + pid];
+                const uchar4 v4 = _v4[tileId * cols4 + pid];
+                _p4[tileId * cols4 + pid] = make_float4(f4.x * v4.x,
+                                                        f4.y * v4.y,
+                                                        f4.z * v4.z,
+                                                        f4.w * v4.w);
             }
+            tile32.sync();
+
+            float sum = 0.0f;
+            for (uint32_t pid = tile32.thread_rank(); pid < cols4; pid += warpSize) {
+
+                const float4 p4 = _p4[tileId * cols4 + pid];
+                const float xP4 = p4.x + p4.y + p4.z + p4.w;
+                const float y   = sum + scanTileFloat(tile32, xP4);
+                _p4[tileId * cols4 + pid] = make_float4( y - p4.y - p4.z - p4.w,
+                                                         y        - p4.z - p4.w,
+                                                         y               - p4.w,
+                                                         y );
+                sum = tile32.shfl(y, 31);
+            }
+            tile32.sync();
 
             float randomFloat = -1.0;
-            if (tid == 0) {
+            if (tile32.thread_rank() == 0) {
                 randomFloat = randXOR(state + ant);
             }
-            randomFloat = __shfl_sync(FULL_MASK, randomFloat, 0);
+            randomFloat = tile32.shfl(randomFloat, 0);
 
             const float probability = randomFloat * sum;
             uint32_t l = 0;
@@ -192,8 +205,9 @@ void calcTour(uint32_t * tabu,
 
             while ( l < r ){
                 const uint32_t m = (l + r) / 2;
-                const uint32_t pid = (m * 32) + tid;
-                const uint32_t ballotMask = __ballot_sync(FULL_MASK,  probability <= p[pid]);
+                const uint32_t pid = (m * 32) + tile32.thread_rank();
+                const float prob = p[tileId * alignedCols + pid];
+                const uint32_t ballotMask = tile32.ballot(probability <= prob);
                 const uint32_t ntid = __popc(ballotMask);
 
                 if (ntid == 0) {
@@ -203,15 +217,18 @@ void calcTour(uint32_t * tabu,
                 } 
             }
 
-            const uint32_t pid = (l * 32) + tid;
-            const uint32_t ballotMask = __ballot_sync(FULL_MASK,  probability <= p[pid]);
+            const uint32_t pid = (l * 32) + tile32.thread_rank();
+            const float prob = p[tileId * alignedCols + pid];
+            const uint32_t ballotMask = tile32.ballot(probability <= prob);
             const uint32_t winner = __ffs(ballotMask) - 1;
-            if (tid == winner) {
+            if (tile32.thread_rank() == winner) {
                 kappa = pid;
                 tabu[ant * alignedCols + s] = pid;
-                v[pid]= 0;
+                v[tileId * alignedCols + pid]= 0;
             }
-            kappa = __shfl_sync(FULL_MASK, kappa, winner);
+            tile32.sync();
+            kappa = tile32.shfl(kappa, winner);
+            
         }
     }
 }
@@ -288,30 +305,29 @@ void updateBestTour(uint32_t * bestTour,
                     const uint32_t cols)
 {
     thread_block_tile<32> tile32 = tiled_partition<32>(this_thread_block());
-    const uint32_t tid = threadIdx.x;
 
     uint32_t bestAnt = 1234567890;
     float minLength = FLT_MAX;
 
-    for (uint32_t stride = 0; stride < cols; stride += 32) {
-        const uint32_t warpTid = tid + stride;
-        const float x = tourLength[warpTid];
-        minLength = fminf(x, minLength);
-        bestAnt = (x == minLength) ? warpTid : bestAnt;
-
-        const float y = minTileFloat(tile32, minLength);
-        const uint32_t mask = tile32.ballot( x == y );
-        const uint32_t maxTile = __ffs(mask) - 1;
-        minLength = tile32.shfl(y, maxTile);
-        bestAnt = tile32.shfl(bestAnt, maxTile);
+    for (uint32_t lid = tile32.thread_rank(); lid < cols; lid += 32) {
+        const float x = tourLength[lid];
+        if ( x < minLength ) {
+            minLength = x;
+            bestAnt = lid;
+        }
     }
 
-    for (uint32_t i = tid; i < cols; i += 32) {
-        bestTour[i] = tabu[bestAnt * cols + i];
+    const float y = minTileFloat(tile32, minLength);
+    const uint32_t ballotMask = tile32.ballot( minLength == y );
+    const uint32_t winner = __ffs(ballotMask) - 1;
+    bestAnt = tile32.shfl(bestAnt, winner);
+
+    for (uint32_t bid = tile32.thread_rank(); bid < cols; bid += 32) {
+        bestTour[bid] = tabu[bestAnt * cols + bid];
     }
 
-    if (tid == 0) {
-        bestTourLength[0] = minLength;
+    if (tile32.thread_rank() == winner) {
+        *bestTourLength = minLength;
     }
 }
 
@@ -387,24 +403,41 @@ int main(int argc, char * argv[]) {
     float q = 1.0f;
     float rho = 0.5f;
     uint32_t maxEpoch = 1;
-    uint32_t nAntsPerWarp = 8;
     uint32_t threadsPerBlock = 128;
+    uint32_t nWarpsPerBlock = 8;
+    uint32_t nAntsPerWarp = 2;
 
-    
-    if (argc < 8) {
-        std::cout << "Usage: ./acogpu file.tsp alpha beta q rho maxEpoch nAntsPerWarp" << std::endl;
+    if ( argc < 7 ) {
+        std::cout << "Usage:"
+        << " ./acogpu"
+        << " file.tsp"
+        << " alpha"
+        << " beta"
+        << " q"
+        << " rho"
+        << " maxEpoch"
+        << " [threadsPerBlock = " << threadsPerBlock << "]"
+        << " [nWarpsPerBlock = "  << nWarpsPerBlock  << "]"
+        << " [nAntsPerWarp = "    << nAntsPerWarp    << "]"
+        << std::endl;
         exit(-1);
     }
 
-    argc--;
-    argv++;
-    path         = argv[0];
-    alpha        = parseArg<float>   (argv[1]);
-    beta         = parseArg<float>   (argv[2]);
-    q            = parseArg<float>   (argv[3]);
-    rho          = parseArg<float>   (argv[4]);
-    maxEpoch     = parseArg<uint32_t>(argv[5]);
-    nAntsPerWarp = parseArg<uint32_t>(argv[6]);
+    path            = argv[1];
+    alpha           = parseArg<float>   (argv[2]);
+    beta            = parseArg<float>   (argv[3]);
+    q               = parseArg<float>   (argv[4]);
+    rho             = parseArg<float>   (argv[5]);
+    maxEpoch        = parseArg<uint32_t>(argv[6]);
+    if ( argc > 7 ) threadsPerBlock = parseArg<uint32_t>(argv[7]);
+    if ( argc > 8 ) nWarpsPerBlock  = parseArg<uint32_t>(argv[8]);
+    if ( argc > 9 ) nAntsPerWarp    = parseArg<uint32_t>(argv[9]);
+
+
+    // if ( nWarpsPerBlock > 8) {
+    //     std::cout << "nWarpsPerBlock must be less or equal to 8 due to vector type of order 4 (visited array) and warpsize (32)" << std::endl;
+    //     exit(-1);
+    // }
 
     TSP<float> tsp(path);
 
@@ -499,72 +532,69 @@ int main(int argc, char * argv[]) {
     // Curand 
     const dim3 initRandBlock( threadsPerBlock );
     const dim3 initRandGrid( numberOfBlocks(randStateElems, initRandBlock.x) );
-    initCurand <<< initRandGrid, initRandBlock >>>(randState, seed, alignedAnts);
-    cudaCheck( cudaGetLastError() );
     // Eta
     const dim3 initEtaBlock( threadsPerBlock );
     const dim3 initEtaGrid( numberOfBlocks(etaCols, initEtaBlock.x) );
-    initEta <<<initEtaGrid, initEtaBlock >>>(eta, edges, etaRows, etaCols);
-    cudaCheck( cudaGetLastError() );
     // Pheromone
     const dim3 initPheroBlock( threadsPerBlock );
     const dim3 initPheroGrid( numberOfBlocks(pheromoneCols, initPheroBlock.x) );
+    // Delta
+    const dim3 initDeltaBlock( threadsPerBlock );
+    const dim3 initDeltaGrid( numberOfBlocks(deltaCols, initDeltaBlock.x) );
+    // Fitness
+    const dim3 fitBlock( threadsPerBlock );
+    const dim3 fitGrid( numberOfBlocks(fitnessCols, fitBlock.x) );
+    // Tour
+    const dim3 tourGrid( divUp(nAnts, nWarpsPerBlock * nAntsPerWarp) );
+    const dim3 tourBlock(32 * nWarpsPerBlock);
+    const uint32_t tourShared  = nWarpsPerBlock * (alignedCities  * sizeof(uint8_t) + alignedCities  * sizeof(float));
+    if ( tourShared > 49152 ) {
+        std::cout << "Shared memory is not enough. Please reduce nWarpsPerBlock." << std::endl;
+        exit(-1);
+    }
+    // TourLength
+    const dim3 lenGrid( nAnts ); // must be nAnts
+    const dim3 lenBlock( threadsPerBlock );
+    const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
+    // Update best
+    const dim3 bestGrid(1); // must be 1
+    const dim3 bestBlock(32); // must be 32
+     // Update Delta
+    const dim3 deltaGrid( nAnts ); //must be nAnts
+    const dim3 deltaBlock( threadsPerBlock );
+    const uint32_t deltaShared = alignedCities * sizeof(uint32_t);
+     // Update Pheromone
+    const dim3 pheroBlock( threadsPerBlock );
+    const dim3 pheroGrid( numberOfBlocks(pheromoneCols, pheroBlock.x) );
+
+
+    initCurand <<< initRandGrid, initRandBlock >>>(randState, seed, alignedAnts);
+    cudaCheck( cudaGetLastError() );
+    initEta <<<initEtaGrid, initEtaBlock >>>(eta, edges, etaRows, etaCols);
+    cudaCheck( cudaGetLastError() );
     initPheromone <<<initPheroGrid, initPheroBlock>>> (pheromone, valPheromone, pheromoneRows, pheromoneCols);
     cudaCheck( cudaGetLastError() );
-    
 
     startTimer();
     uint32_t epoch = 0;
     do {
-        // Delta
-        const dim3 initDeltaBlock( threadsPerBlock );
-        const dim3 initDeltaGrid( numberOfBlocks(deltaCols, initDeltaBlock.x) );
         initDelta <<<initDeltaGrid, initDeltaBlock>>> (delta, deltaRows, deltaCols);
         cudaCheck( cudaGetLastError() );
-
-        // Fitness
-        const dim3 fitBlock( threadsPerBlock );
-        const dim3 fitGrid( numberOfBlocks(fitnessCols, fitBlock.x) );
         calcFitness <<<fitGrid, fitBlock >>> (fitness, pheromone, eta, alpha, beta, fitnessRows, fitnessCols);
         cudaCheck( cudaGetLastError() );
-
-        // Tour
-        const dim3 tourGrid( divUp(nAnts, nAntsPerWarp) );
-        const dim3 tourBlock(32);   // must be 32
-        const uint32_t tourShared  = alignedCities  * sizeof(uint8_t) + // v
-                                     alignedCities  * sizeof(float);    // p
         calcTour <<<tourGrid, tourBlock, tourShared>>> (tabu, fitness, nAnts, tabuRows, tabuCols, randState);
         cudaCheck( cudaGetLastError() );
-
-        // TourLength
-        const dim3 lenGrid(nAnts);  // must be nAnts
-        const dim3 lenBlock( threadsPerBlock );
-        const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
         calcTourLength <<<lenGrid, lenBlock, lenShared>>> (tourLength, edges, tabu, nAnts, alignedCities, nCities);
         cudaCheck( cudaGetLastError() );
-
-        // Update best
-        const dim3 bestGrid(1);     // must be 1
-        const dim3 bestBlock(32);   // must be 32
         updateBestTour <<<bestGrid, bestBlock>>> (bestTour, bestTourLength, tabu, tourLength, nAnts, alignedCities);
         cudaCheck( cudaGetLastError() );
-        
-        // Update Delta
-        const dim3 deltaGrid( nAnts );  //must be nAnts
-        const dim3 deltaBlock( threadsPerBlock );
-        const uint32_t deltaShared = alignedCities * sizeof(uint32_t);
         updateDelta <<<deltaGrid, deltaBlock, deltaShared>>> (delta, tabu, tourLength, nAnts, alignedCities, nCities, q);
         cudaCheck( cudaGetLastError() );
-
-        // Update Pheromone
-        const dim3 pheroBlock( threadsPerBlock );
-        const dim3 pheroGrid( numberOfBlocks(pheromoneCols, pheroBlock.x) );
         updatePheromone <<<pheroGrid, pheroBlock>>> (pheromone, delta, pheromoneRows, pheromoneCols, rho);
         cudaCheck( cudaGetLastError() );
     } while (++epoch < maxEpoch);
 
     cudaDeviceSynchronize();
-
     stopAndPrintTimer();
     printMatrix("bestTour", bestTour, 1, nCities);
     printResult(tsp.getName(),

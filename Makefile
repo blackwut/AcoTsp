@@ -12,8 +12,8 @@ $(ACOCPU): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) main.cpp -o $(ACOCPU) $(LIBS)
 
 $(ACOGPU): AcoGPU.cu TSP.cpp
-	nvcc -Xptxas="-v" -O3 -lineinfo -c TSP.cpp -o TSP.o
-	nvcc -Xptxas="-v" -O3 -lineinfo AcoGPU.cu -o $@
+	nvcc -Xptxas="-v" -O3 -c TSP.cpp -o TSP.o
+	nvcc -Xptxas="-v" -O3 AcoGPU.cu -o $@
 
 
 $(STATS): stats.cpp
