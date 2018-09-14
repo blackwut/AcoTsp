@@ -6,6 +6,8 @@
 #include <thread>
 #include <chrono>
 
+#include <cuda.h>
+#include <cuda_runtime.h>
 #include <vector_types.h>
 #include <curand.h>
 #include <curand_kernel.h>
@@ -14,6 +16,37 @@ using namespace cooperative_groups;
 
 #include "common.hpp"
 #include "TSP.cpp"
+
+inline int _ConvertSMVer2Cores(int major, int minor)
+{
+    typedef struct {
+        int SM; // 0xMm (hexidecimal notation), M = SM Major version, and m = SM minor version
+        int Cores;
+    } sSMtoCores;
+
+    sSMtoCores nGpuArchCoresPerSM[] = {
+        { 0x30, 192}, // Kepler Generation (SM 3.0) GK10x class
+        { 0x32, 192}, // Kepler Generation (SM 3.2) GK10x class
+        { 0x35, 192}, // Kepler Generation (SM 3.5) GK11x class
+        { 0x37, 192}, // Kepler Generation (SM 3.7) GK21x class
+        { 0x50, 128}, // Maxwell Generation (SM 5.0) GM10x class
+        { 0x52, 128}, // Maxwell Generation (SM 5.2) GM20x class
+        { 0x53, 128}, // Maxwell Generation (SM 5.3) GM20x class
+        { 0x60, 64 }, // Pascal Generation (SM 6.0) GP100 class
+        { 0x61, 128}, // Pascal Generation (SM 6.1) GP10x class
+        { 0x62, 128}, // Pascal Generation (SM 6.2) GP10x class
+        { 0x70, 64 }, // Volta Generation (SM 7.0) GV100 class
+        { 0x72, 64 }, // Volta Generation (SM 7.2) GV11b class
+        {   -1, -1 }
+    };
+
+    int index = 0;
+    while (nGpuArchCoresPerSM[index].SM != -1) {
+        if (nGpuArchCoresPerSM[index].SM == ((major << 4) + minor)) return nGpuArchCoresPerSM[index].Cores;
+        index++;
+    }
+    return nGpuArchCoresPerSM[index-1].Cores;
+}
 
 #define cudaCheck(ans) do { cudaAssert((ans), __FILE__, __LINE__); } while(0)
 inline void cudaAssert(cudaError_t code, const char * file, uint32_t line, bool abort = true)
@@ -489,6 +522,44 @@ int main(int argc, char * argv[]) {
     const uint32_t tourLengthElems = tourLengthRows * tourLengthCols;
     const uint32_t bestTourElems   = bestTourRows   * bestTourCols;
 
+    const float gmemRequired = (randStateElems  * sizeof(float)    +
+                                   edgesElems      * sizeof(float)    +
+                                   etaElems        * sizeof(float)    +
+                                   pheromoneElems  * sizeof(float)    +
+                                   fitnessElems    * sizeof(float)    +
+                                   deltaElems      * sizeof(float)    +
+                                   tabuElems       * sizeof(uint32_t) +
+                                   tourLengthElems * sizeof(float)    +
+                                   bestTourElems   * sizeof(uint32_t) +
+                                   1               * sizeof(float)
+                                   ) / 1048576.0;
+
+    const uint32_t smemRequired  = nWarpsPerBlock * alignedCities * 5;
+
+    int deviceCount = 0;
+    cudaCheck( cudaGetDeviceCount(&deviceCount) );
+    if (deviceCount == 0) {
+        std::cout << "There are no available device(s) that support CUDA" << std::endl;
+        exit(-1);
+    }
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+
+    const float globalMemory = deviceProp.totalGlobalMem / 1048576.0;
+    const uint32_t sharedMemory = deviceProp.sharedMemPerBlock;
+    const uint32_t MPcount = deviceProp.multiProcessorCount;
+    const uint32_t maxThreadsPerMP = deviceProp.maxThreadsPerMultiProcessor;
+    const uint32_t maxThreadsPerBlock = deviceProp.maxThreadsPerBlock;
+    const uint32_t cudaCoresPerMP = _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor);
+    const uint32_t cudaCoresCount = MPcount * cudaCoresPerMP;
+
+    std::cout << "       Device: " << deviceProp.name           << std::endl
+              << "Global memory: " << std::setw(8) << std::setprecision(2) << std::fixed << globalMemory     << " MB" << std::endl
+              << "     required: " << std::setw(8) << std::setprecision(2) << std::fixed << gmemRequired     << " MB" << std::endl
+              << "Shared memory: " << std::setw(8) << std::setprecision(2) << std::fixed << sharedMemory     << "  B" << std::endl
+              << "     required: " << std::setw(8) << std::setprecision(2) << std::fixed << smemRequired     << "  B" << std::endl;
+
+
     cudaCheck( cudaMallocManaged(&randState,      randStateElems  * sizeof(curandStateXORWOW_t)) );
     cudaCheck( cudaMallocManaged(&edges,          edgesElems      * sizeof(float))               );
     cudaCheck( cudaMallocManaged(&eta,            etaElems        * sizeof(float))               );
@@ -499,19 +570,6 @@ int main(int argc, char * argv[]) {
     cudaCheck( cudaMallocManaged(&tourLength,     tourLengthElems * sizeof(float))               );
     cudaCheck( cudaMallocManaged(&bestTour,       bestTourElems   * sizeof(uint32_t))            );
     cudaCheck( cudaMallocManaged(&bestTourLength, sizeof(float))                                 );
-
-    const uint32_t totalMemory = (randStateElems  * sizeof(float)    +
-                                  edgesElems      * sizeof(float)    +
-                                  etaElems        * sizeof(float)    +
-                                  pheromoneElems  * sizeof(float)    +
-                                  fitnessElems    * sizeof(float)    +
-                                  deltaElems      * sizeof(float)    +
-                                  tabuElems       * sizeof(uint32_t) +
-                                  tourLengthElems * sizeof(float)    +
-                                  bestTourElems   * sizeof(uint32_t) +
-                                  1               * sizeof(float));
-
-    std::cout << " **** ACO TSP totalMemory **** \tMB " << (totalMemory / 1024.f) / 1024.f<< std::endl;
 
     rho = 1.0 - rho;
 
@@ -548,7 +606,7 @@ int main(int argc, char * argv[]) {
     const dim3 tourGrid( divUp(nAnts, nWarpsPerBlock * nAntsPerWarp) );
     const dim3 tourBlock(32 * nWarpsPerBlock);
     const uint32_t tourShared  = nWarpsPerBlock * (alignedCities  * sizeof(uint8_t) + alignedCities  * sizeof(float));
-    if ( tourShared > 49152 ) {
+    if ( tourShared > deviceProp.sharedMemPerBlock ) {
         std::cout << "Shared memory is not enough. Please reduce nWarpsPerBlock." << std::endl;
         exit(-1);
     }
@@ -597,15 +655,26 @@ int main(int argc, char * argv[]) {
     cudaDeviceSynchronize();
     stopAndPrintTimer();
     printMatrix("bestTour", bestTour, 1, nCities);
-    printResult(tsp.getName(),
+
+    {
+        const uint32_t threadsPerBlock = nWarpsPerBlock * 32;
+        const uint32_t blocksPerMP = sharedMemory / smemRequired;
+        uint32_t threadsExecuted  = MPcount * blocksPerMP * threadsPerBlock;
+        if (threadsExecuted > (nAnts * 32))  threadsExecuted = nAnts * 32;
+        if (threadsExecuted > cudaCoresCount) threadsExecuted = cudaCoresCount;
+
+        printResult(tsp.getName(),
                     0,
-                    0,
+                    threadsExecuted,
                     maxEpoch,
                     getTimerMS(),
                     getTimerUS(),
                     *bestTourLength,
                     tsp.calcTourLength(bestTour),
                     tsp.checkTour(bestTour));
+    }
+
+    
 
     cudaFree(randState);
     cudaFree(edges);
