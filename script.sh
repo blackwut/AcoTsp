@@ -7,7 +7,7 @@
 # ./script 1> /dev/null 2> log.txt &
 # CTRL + A then D                       // detach from screen session
 
-make acocpu
+make clean && make acocpu
 
 tspBase="tsp/"
 
@@ -23,7 +23,7 @@ tspArray=(
     "fl3795.tsp"
 )
 
-mapThreads=(
+nThreads=(
     1
     2
     4
@@ -34,29 +34,17 @@ mapThreads=(
     128
 )
 
-farmThreads=(
-    1
-    2
-    4
-    8
-    16
-    32
-    64
-)
 
 for problem in "${tspArray[@]}"
 do
     echo $problem;
-    for i in "${mapThreads[@]}"
+    for i in "${nThreads[@]}"
     do
-        # for j in "${farmThreads[@]}"
-        # do
-            for k in `seq 1 10`;
-            do
-    #       ./acocpu file.tsp           alpha   beta    q   rho maxEpoch    mapThreads  farmThreads
-            ./acocpu $tspBase$problem   1       2       1   0.5 16           $i          $i
-            done
-        # done
+        for k in `seq 1 10`;
+        do
+#       ./acocpu file.tsp           alpha   beta    q   rho maxEpoch    mapThreads  farmThreads
+        ./acocpu $tspBase$problem   1       2       1   0.5 10          $i          $i
+        done
     done
 done
 
