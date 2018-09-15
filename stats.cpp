@@ -177,8 +177,6 @@ void loadFile(const std::string & filename, std::vector<Row> & rows) {
 
     std::string unused;
     while ( !in.eof() ) {
-    // for (uint32_t i = 0; i < 21; ++i) {
-
         Row r;
 
         in >> unused
@@ -228,7 +226,6 @@ int main(int argc, char * argv[]) {
     //     << std::endl;
     // }
 
-    
     std::vector<Stat> stats = getStats(rows);
     updateSpeedup(stats);
     updateScalability(stats);
