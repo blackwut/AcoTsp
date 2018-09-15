@@ -17,37 +17,6 @@ using namespace cooperative_groups;
 #include "common.hpp"
 #include "TSP.cpp"
 
-inline int _ConvertSMVer2Cores(int major, int minor)
-{
-    typedef struct {
-        int SM; // 0xMm (hexidecimal notation), M = SM Major version, and m = SM minor version
-        int Cores;
-    } sSMtoCores;
-
-    sSMtoCores nGpuArchCoresPerSM[] = {
-        { 0x30, 192}, // Kepler Generation (SM 3.0) GK10x class
-        { 0x32, 192}, // Kepler Generation (SM 3.2) GK10x class
-        { 0x35, 192}, // Kepler Generation (SM 3.5) GK11x class
-        { 0x37, 192}, // Kepler Generation (SM 3.7) GK21x class
-        { 0x50, 128}, // Maxwell Generation (SM 5.0) GM10x class
-        { 0x52, 128}, // Maxwell Generation (SM 5.2) GM20x class
-        { 0x53, 128}, // Maxwell Generation (SM 5.3) GM20x class
-        { 0x60, 64 }, // Pascal Generation (SM 6.0) GP100 class
-        { 0x61, 128}, // Pascal Generation (SM 6.1) GP10x class
-        { 0x62, 128}, // Pascal Generation (SM 6.2) GP10x class
-        { 0x70, 64 }, // Volta Generation (SM 7.0) GV100 class
-        { 0x72, 64 }, // Volta Generation (SM 7.2) GV11b class
-        {   -1, -1 }
-    };
-
-    int index = 0;
-    while (nGpuArchCoresPerSM[index].SM != -1) {
-        if (nGpuArchCoresPerSM[index].SM == ((major << 4) + minor)) return nGpuArchCoresPerSM[index].Cores;
-        index++;
-    }
-    return nGpuArchCoresPerSM[index-1].Cores;
-}
-
 #define cudaCheck(ans) do { cudaAssert((ans), __FILE__, __LINE__); } while(0)
 inline void cudaAssert(cudaError_t code, const char * file, uint32_t line, bool abort = true)
 {
@@ -177,17 +146,14 @@ void calcTour(uint32_t * tabu,
     extern __shared__ uint32_t smem[];
     uint8_t * v = (uint8_t *) smem;
     float   * p = (float *)   &v[alignedCols * tiles];
-    // Vector type aliases
-    const float4 * _f4 = (float4 *) fitness;
-    uchar4 * _v4 = (uchar4 *) v;
-    float4 * _p4 = (float4 *) p;
     const uint32_t cols4 = alignedCols / 4;
 
 
     for (uint32_t ant = tileId + (blockIdx.x * tiles); ant < rows; ant += (gridDim.x * tiles) ) {
 
         for (uint32_t i = tile32.thread_rank(); i < cols4; i += warpSize) {
-            _v4[tileId * cols4 + i] = make_uchar4(1, 1, 1, 1);
+            const uint32_t idx = tileId * cols4 + i;
+            reinterpret_cast<uchar4 *>(v)[idx] = make_uchar4(1, 1, 1, 1);
         }
         tile32.sync();
 
@@ -197,31 +163,33 @@ void calcTour(uint32_t * tabu,
             v[tileId * alignedCols + kappa] = 0;
             tabu[ant * alignedCols] = kappa;
         }
-        tile32.sync();
         kappa = tile32.shfl(kappa, 0);
 
         for (uint32_t s = 1; s < cols; ++s) {
 
+            tile32.sync();
+
             for (uint32_t pid = tile32.thread_rank(); pid < cols4; pid += warpSize) {
-                const float4 f4 = _f4[kappa * cols4 + pid];
-                const uchar4 v4 = _v4[tileId * cols4 + pid];
-                _p4[tileId * cols4 + pid] = make_float4(f4.x * v4.x,
-                                                        f4.y * v4.y,
-                                                        f4.z * v4.z,
-                                                        f4.w * v4.w);
+                const uint32_t idx = tileId * cols4 + pid;
+                const float4 f4 = reinterpret_cast<const float4 *>(fitness)[kappa * cols4 + pid];
+                const uchar4 v4 = reinterpret_cast<uchar4 *>(v)[idx];
+                reinterpret_cast<float4 *>(p)[idx] = make_float4(f4.x * v4.x,
+                                                                 f4.y * v4.y,
+                                                                 f4.z * v4.z,
+                                                                 f4.w * v4.w);
             }
             tile32.sync();
 
             float sum = 0.0f;
             for (uint32_t pid = tile32.thread_rank(); pid < cols4; pid += warpSize) {
-
-                const float4 p4 = _p4[tileId * cols4 + pid];
+                const uint32_t idx = tileId * cols4 + pid;
+                const float4 p4 = reinterpret_cast<float4 *>(p)[idx];
                 const float xP4 = p4.x + p4.y + p4.z + p4.w;
                 const float y   = sum + scanTileFloat(tile32, xP4);
-                _p4[tileId * cols4 + pid] = make_float4( y - p4.y - p4.z - p4.w,
-                                                         y        - p4.z - p4.w,
-                                                         y               - p4.w,
-                                                         y );
+                reinterpret_cast<float4 *>(p)[idx] = make_float4( y - p4.y - p4.z - p4.w,
+                                                                  y        - p4.z - p4.w,
+                                                                  y               - p4.w,
+                                                                  y );
                 sum = tile32.shfl(y, 31);
             }
             tile32.sync();
@@ -259,9 +227,7 @@ void calcTour(uint32_t * tabu,
                 tabu[ant * alignedCols + s] = pid;
                 v[tileId * alignedCols + pid]= 0;
             }
-            tile32.sync();
             kappa = tile32.shfl(kappa, winner);
-            
         }
     }
 }
@@ -466,12 +432,6 @@ int main(int argc, char * argv[]) {
     if ( argc > 8 ) nWarpsPerBlock  = parseArg<uint32_t>(argv[8]);
     if ( argc > 9 ) nAntsPerWarp    = parseArg<uint32_t>(argv[9]);
 
-
-    // if ( nWarpsPerBlock > 8) {
-    //     std::cout << "nWarpsPerBlock must be less or equal to 8 due to vector type of order 4 (visited array) and warpsize (32)" << std::endl;
-    //     exit(-1);
-    // }
-
     TSP<float> tsp(path);
 
     const uint64_t seed         = time(0);
@@ -543,15 +503,10 @@ int main(int argc, char * argv[]) {
         exit(-1);
     }
     cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0);
+    cudaCheck( cudaGetDeviceProperties(&deviceProp, 0) );
 
     const float globalMemory = deviceProp.totalGlobalMem / 1048576.0;
     const uint32_t sharedMemory = deviceProp.sharedMemPerBlock;
-    const uint32_t MPcount = deviceProp.multiProcessorCount;
-    const uint32_t maxThreadsPerMP = deviceProp.maxThreadsPerMultiProcessor;
-    const uint32_t maxThreadsPerBlock = deviceProp.maxThreadsPerBlock;
-    const uint32_t cudaCoresPerMP = _ConvertSMVer2Cores(deviceProp.major, deviceProp.minor);
-    const uint32_t cudaCoresCount = MPcount * cudaCoresPerMP;
 
     std::cout << "       Device: " << deviceProp.name           << std::endl
               << "Global memory: " << std::setw(8) << std::setprecision(2) << std::fixed << globalMemory     << " MB" << std::endl
@@ -633,7 +588,12 @@ int main(int argc, char * argv[]) {
     initPheromone <<<initPheroGrid, initPheroBlock>>> (pheromone, valPheromone, pheromoneRows, pheromoneCols);
     cudaCheck( cudaGetLastError() );
 
-    startTimer();
+    cudaEvent_t start;
+    cudaEvent_t stop;
+    cudaCheck( cudaEventCreate(&start) );
+    cudaCheck( cudaEventCreate(&stop) );
+    cudaCheck( cudaEventRecord(start, 0) );
+
     uint32_t epoch = 0;
     do {
         initDelta <<<initDeltaGrid, initDeltaBlock>>> (delta, deltaRows, deltaCols);
@@ -652,29 +612,28 @@ int main(int argc, char * argv[]) {
         cudaCheck( cudaGetLastError() );
     } while (++epoch < maxEpoch);
 
-    cudaDeviceSynchronize();
-    stopAndPrintTimer();
+    cudaCheck( cudaEventRecord(stop, 0) );
+    cudaCheck( cudaEventSynchronize(stop) );
+    float msec;
+    long usec;
+    cudaCheck( cudaEventElapsedTime(&msec, start, stop) );
+    usec = msec * 1000;
+    std::cout << "Compute time: " << msec << " ms " << usec << " usec " << std::endl;
     printMatrix("bestTour", bestTour, 1, nCities);
 
-    {
-        const uint32_t threadsPerBlock = nWarpsPerBlock * 32;
-        const uint32_t blocksPerMP = sharedMemory / smemRequired;
-        uint32_t threadsExecuted  = MPcount * blocksPerMP * threadsPerBlock;
-        if (threadsExecuted > (nAnts * 32))  threadsExecuted = nAnts * 32;
-        if (threadsExecuted > cudaCoresCount) threadsExecuted = cudaCoresCount;
+    uint32_t maxActiveBlocks = 0;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor((int *)&maxActiveBlocks, calcTour, tourBlock.x, tourShared);
+    uint32_t threadsActive = maxActiveBlocks * tourBlock.x * deviceProp.multiProcessorCount;
 
-        printResult(tsp.getName(),
-                    0,
-                    threadsExecuted,
-                    maxEpoch,
-                    getTimerMS(),
-                    getTimerUS(),
-                    *bestTourLength,
-                    tsp.calcTourLength(bestTour),
-                    tsp.checkTour(bestTour));
-    }
-
-    
+    printResult(tsp.getName(),
+                maxActiveBlocks,
+                threadsActive,
+                maxEpoch,
+                msec,
+                usec,
+                *bestTourLength,
+                tsp.calcTourLength(bestTour),
+                tsp.checkTour(bestTour));
 
     cudaFree(randState);
     cudaFree(edges);
