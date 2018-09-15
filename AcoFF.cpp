@@ -16,12 +16,12 @@ using namespace ff;
 template <typename T, typename D>
 struct Emitter: ff_node_t< Ant<T> > {
 
-    ff_loadbalancer * loadBalancer;
+    ff_loadbalancer * const loadBalancer;
     const Parameters<T>     & params;
     const Environment<T, D> & env;
     std::vector< Ant<T> >   & ants;
 
-    Emitter(ff_loadbalancer * loadBalancer,
+    Emitter(ff_loadbalancer * const loadBalancer,
             const Parameters<T>     & params,
             const Environment<T, D> & env,
             std::vector< Ant<T> >   & ants) :
@@ -40,7 +40,7 @@ struct Emitter: ff_node_t< Ant<T> > {
         
             loadBalancer->broadcast_task(EOS);
         }
-        return (Ant<T> *)GO_ON;
+        return (Ant<T> *)GO_OUT;
     }
 };
 
@@ -69,7 +69,9 @@ struct Worker: ff_node_t< Ant<T> > {
     
     Ant<T> * svc( Ant<T> * ant ) {
 
-        if (ant == (Ant<T> * )EOS) return (Ant<T> * )EOS;
+        if ((void *)ant == EOS) {
+            return (Ant<T> * )EOS;
+        }
 
         ant->constructTour(env.fitness, env.edges);
         const T tau = params.q / ant->getTourLength();
@@ -104,8 +106,6 @@ private:
     const uint32_t farmWorkers;
     std::vector< Ant<T> > ants;
 
-    ff_Farm<T, D>        * farmTour;
-    Emitter<T, D>        * emitterTour;
     ParallelForReduce<T> pfr;
     ParallelForReduce< Ant<T> * > pfrAnts;
 
@@ -133,18 +133,6 @@ private:
             fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
         });
         pfr.threadPause();
-    }
-
-    void calcTour() {
-        if (farmTour->run_then_freeze() < 0) {
-            error("Running farm\n");
-            exit(EXIT_RUN_FARM);
-        }
-
-        if (farmTour->wait_freezing() < 0) {
-            error("Wait freezing farm\n");
-            exit(EXIT_WAIT_FREEZING_FARM);
-        }
     }
 
     void updateBestTour(std::vector<uint32_t> & bestTour,
@@ -202,35 +190,36 @@ public:
     pfr        (mapWorkers),
     pfrAnts    (mapWorkers)
     {
-        farmTour = new ff_Farm<T, D>( [&]() {
-            std::vector< std::unique_ptr<ff_node> > workers;
-            for(uint32_t i = 0; i < farmWorkers; ++i)
-                workers.push_back( make_unique< Worker<T, D> >(params, env) );
-            return workers;
-        }());
-
-        emitterTour = new Emitter<T, D>(farmTour->getlb(), params, env, ants);
-        farmTour->add_emitter(*emitterTour);
-        farmTour->remove_collector();
-        farmTour->wrap_around();
-        farmTour->set_scheduling_ondemand();
-
         initEta(env.eta, env.edges, env.nCities);
     }
 
     void solve() {
+
+        ff_Farm<> farmTour( [&]() {
+            std::vector< std::unique_ptr< ff_node > > workers;
+            for(uint32_t i = 0; i < farmWorkers; ++i)
+                workers.push_back( make_unique< Worker<T, D> >(params, env) );
+            return workers;
+        } ());
+
+        Emitter<T, D> E(farmTour.getlb(), params, env, ants);
+        farmTour.add_emitter(E);
+        farmTour.remove_collector();
+        farmTour.wrap_around();
+
         uint32_t epoch = 0;
         do {
             calcFitness    (env.fitness, env.pheromone, env.eta, env.nCities, params.alpha, params.beta);
-            calcTour       ();
+
+            // Calc Tour
+            if (farmTour.run_then_freeze() < 0) { error("Running farm\n"); exit(EXIT_RUN_FARM); }
+            if (farmTour.wait_freezing() < 0) { error("Wait freezing farm\n"); exit(EXIT_WAIT_FREEZING_FARM); }
+
             updateBestTour (env.bestTour, env.bestTourLength);
             resetDelta     (env.delta, env.nCities);
             updatePheromone(env.pheromone, env.delta, env.nCities, params.rho);
         } while ( ++epoch < params.maxEpoch );
     }
 
-    ~AcoFF(){
-        delete farmTour;
-        delete emitterTour;
-    }
+    ~AcoFF(){}
 };
