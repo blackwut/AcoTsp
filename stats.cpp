@@ -7,6 +7,13 @@
 #include <cmath>
 #include <stdint.h>
 
+#define UNIT_S  1000000.0
+#define UNIT_MS 1000.0
+#define UNIT_US 1
+#define UNIT_OUTPUT UNIT_S
+
+#define TIME(val) (val) / UNIT_OUTPUT
+
 std::vector<std::string> names = {
     "bays29",
     "d198",
@@ -14,9 +21,9 @@ std::vector<std::string> names = {
     "rat783",
     "pr1002",
     "pcb1173",
-    // "rl1889",
-    // "pr2392",
-    // "fl3795"
+    "rl1889",
+    "pr2392",
+    "fl3795"
 };
 
 std::vector<uint32_t> threads = {
@@ -27,7 +34,8 @@ std::vector<uint32_t> threads = {
     8,
     16,
     32,
-    64
+    64,
+    128
 };
 
 struct Row {
@@ -181,9 +189,9 @@ void loadFile(const std::string & filename, std::vector<Row> & rows) {
         >> r.timeMS
         >> r.timeUS
         >> r.bestTourLength
-        // >> r.checkTour
-        // >> r.checkTourLength
-        // >> unused
+        >> r.checkTour
+        >> r.checkTourLength
+        >> unused
         >> unused;
 
         rows.push_back(r);
@@ -197,6 +205,10 @@ int main(int argc, char * argv[]) {
     argc--;
     argv++;
 
+    for (uint32_t i = 0; i < argc; ++i) {
+        std::cout << i << argv[i] << std::endl;
+    }
+    
     std::vector<Row> rows;
 
     for (uint32_t i = 0; i < argc; ++i) {
@@ -225,8 +237,8 @@ int main(int argc, char * argv[]) {
     std::cout << std::setw(10)
         << std::setw(14) << "name"           << "\t"
         << std::setw(14) << "workers"        << "\t"
-        << std::setw(14) << "samples"        << "\t"
-        << std::setw(14) << "sum"            << "\t"
+        // << std::setw(14) << "samples"        << "\t"
+        // << std::setw(14) << "sum"            << "\t"
         << std::setw(14) << "min"            << "\t"
         << std::setw(14) << "avg"            << "\t"
         << std::setw(14) << "max"            << "\t"
@@ -236,14 +248,14 @@ int main(int argc, char * argv[]) {
         << std::endl;
 
     for (Stat s : stats) {
-        std::cout << std::setw(10) << std::setprecision(2) << std::fixed
+        std::cout << std::setw(10) << std::setprecision(3) << std::fixed
         << std::setw(14) << s.name           << "\t"
         << std::setw(14) << s.workers        << "\t"
-        << std::setw(14) << s.samples        << "\t"
-        << std::setw(14) << s.sum            << "\t"
-        << std::setw(14) << s.min            << "\t"
-        << std::setw(14) << s.avg            << "\t"
-        << std::setw(14) << s.max            << "\t"
+        // << std::setw(14) << s.samples        << "\t"
+        // << std::setw(14) << s.sum            << "\t"
+        << std::setw(14) << TIME(s.min)      << "\t"
+        << std::setw(14) << TIME(s.avg)      << "\t"
+        << std::setw(14) << TIME(s.max)      << "\t"
         << std::setw(14) << s.speedup        << "\t"
         << std::setw(14) << s.scalability    << "\t"
         << std::setw(14) << s.efficiency     << "\t"
