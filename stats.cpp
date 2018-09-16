@@ -6,6 +6,8 @@
 #include <cstring>
 #include <cmath>
 #include <stdint.h>
+#include <algorithm>
+#include <map>
 
 #define UNIT_S  1000000.0
 #define UNIT_MS 1000.0
@@ -40,14 +42,16 @@ std::vector<uint32_t> threads = {
 
 struct Row {
     std::string name;
-    uint32_t    mapWorkers;
-    uint32_t    farmWorkers;
+    int32_t    mapWorkers;
+    int32_t    farmWorkers;
     uint32_t    maxEpoch;
     long        timeMS;
     long        timeUS;
     float       bestTourLength;
     std::string checkTour;
     std::string checkTourLength;
+    uint32_t    nWarpsPerBlock;     // AcoGPU only
+    uint32_t    nMaxAntsPerWarp;    // AcoGPU only
 };
 
 struct Stat
@@ -64,37 +68,58 @@ struct Stat
     double   efficiency  = 0.0;
 };
 
-std::vector<Stat> getStats(std::vector<Row> & rows) {
+std::vector<uint32_t> getAllKeys(std::multimap<uint32_t, Row> & rows) {
+
+    std::vector<uint32_t> keys;
+
+    for (auto it = rows.begin(); it != rows.end(); it++) {
+        if ( std::find(keys.begin(), keys.end(), it->first) == keys.end() ) {
+           keys.push_back(it->first);
+        }
+    }
+    return keys;
+}
+
+std::vector<Stat> getStats(std::multimap<uint32_t, Row> & rows, std::vector<uint32_t> keys) {
 
     std::vector<Stat> stats;
 
     for (std::string & name : names) {
 
-        for (uint32_t & thread : threads) {
+        for (uint32_t & k : keys) {
             Stat s;
             s.name = name;
-            s.workers = thread;
+            s.workers = k;
 
-            for (Row & r : rows) {
-                if (r.name == name && r.mapWorkers == thread && r.farmWorkers == thread) {
+            auto range = rows.equal_range(k);
+            for (auto i = range.first; i != range.second; ++i) {
+                Row & r = i->second;
+                if (r.name == name && r.mapWorkers >= 0 && r.farmWorkers >= 0) {
                     const double time = r.timeUS;
                     s.samples += 1;
                     s.sum = s.sum + time;
                     if (s.min > time) s.min = time;
                     if (s.max < time) s.max = time;
-
                 }
             }
 
-            s.sum = s.sum - s.min - s.max;
-            s.avg = s.sum / (s.samples - 2);
-            stats.push_back(s);
+            if (s.samples > 0) {
+                s.sum = s.sum - s.min - s.max;
+                s.avg = s.sum / (s.samples - 2);
+                stats.push_back(s);
+            } else {
+                s.sum = 0.0;
+                s.min = 0.0;
+                s.avg = 0.0;
+                s.max = 0.0;
+            }
         }
     }
 
     return stats;
 }
 
+// TSeq / TPar(n)
 void updateSpeedup(std::vector<Stat> & stats) {
 
     for (std::string & name : names) {
@@ -119,6 +144,7 @@ void updateSpeedup(std::vector<Stat> & stats) {
     }
 }
 
+// TPar(1) / TPar(n)
 void updateScalability(std::vector<Stat> & stats) {
 
     for (std::string & name : names) {
@@ -143,6 +169,7 @@ void updateScalability(std::vector<Stat> & stats) {
     }
 }
 
+// Tseq / (TPar(n) * n)
 void updateEfficiency(std::vector<Stat> & stats) {
 
     for (std::string & name : names) {
@@ -167,7 +194,7 @@ void updateEfficiency(std::vector<Stat> & stats) {
     }
 }
 
-void loadFile(const std::string & filename, std::vector<Row> & rows) {
+void loadFile(const std::string & filename, std::multimap<uint32_t, Row> & rows) {
     
     std::ifstream in(filename);
     if ( !in ) {
@@ -176,6 +203,8 @@ void loadFile(const std::string & filename, std::vector<Row> & rows) {
     }
 
     std::string unused;
+    float one;
+    float two;
     while ( !in.eof() ) {
         Row r;
 
@@ -189,10 +218,17 @@ void loadFile(const std::string & filename, std::vector<Row> & rows) {
         >> r.bestTourLength
         >> r.checkTour
         >> r.checkTourLength
-        >> unused
-        >> unused;
+        >> one
+        >> two;
 
-        rows.push_back(r);
+        r.nWarpsPerBlock = one;
+        r.nMaxAntsPerWarp = two;
+
+        if (r.timeUS == 0) {
+            r.mapWorkers = r.farmWorkers = -1;
+        }
+
+        rows.insert({r.farmWorkers, r});
     }
 
     in.close();
@@ -203,15 +239,13 @@ int main(int argc, char * argv[]) {
     argc--;
     argv++;
 
-    for (uint32_t i = 0; i < argc; ++i) {
-        std::cout << i << argv[i] << std::endl;
-    }
-    
-    std::vector<Row> rows;
+    std::multimap<uint32_t, Row> rows;
 
     for (uint32_t i = 0; i < argc; ++i) {
         loadFile(argv[i], rows);
     }
+
+    std::vector<uint32_t> keys = getAllKeys(rows);
 
     // for (Row r : rows) {
     //     std::cout << r.name  << "\t"
@@ -226,7 +260,7 @@ int main(int argc, char * argv[]) {
     //     << std::endl;
     // }
 
-    std::vector<Stat> stats = getStats(rows);
+    std::vector<Stat> stats = getStats(rows, keys);
     updateSpeedup(stats);
     updateScalability(stats);
     updateEfficiency(stats);
@@ -236,23 +270,23 @@ int main(int argc, char * argv[]) {
         << std::setw(14) << "workers"        << "\t"
         // << std::setw(14) << "samples"        << "\t"
         // << std::setw(14) << "sum"            << "\t"
-        << std::setw(14) << "min"            << "\t"
+        // << std::setw(14) << "min"            << "\t"
         << std::setw(14) << "avg"            << "\t"
-        << std::setw(14) << "max"            << "\t"
+        // << std::setw(14) << "max"            << "\t"
         << std::setw(14) << "speedup"        << "\t"
         << std::setw(14) << "scalability"    << "\t"
         << std::setw(14) << "efficiency"     << "\t"
         << std::endl;
 
     for (Stat s : stats) {
-        std::cout << std::setw(10) << std::setprecision(3) << std::fixed
+        std::cout << std::setw(10) << std::setprecision(4) << std::fixed
         << std::setw(14) << s.name           << "\t"
         << std::setw(14) << s.workers        << "\t"
         // << std::setw(14) << s.samples        << "\t"
         // << std::setw(14) << s.sum            << "\t"
-        << std::setw(14) << TIME(s.min)      << "\t"
+        // << std::setw(14) << TIME(s.min)      << "\t"
         << std::setw(14) << TIME(s.avg)      << "\t"
-        << std::setw(14) << TIME(s.max)      << "\t"
+        // << std::setw(14) << TIME(s.max)      << "\t"
         << std::setw(14) << s.speedup        << "\t"
         << std::setw(14) << s.scalability    << "\t"
         << std::setw(14) << s.efficiency     << "\t"

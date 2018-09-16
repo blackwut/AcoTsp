@@ -44,7 +44,6 @@ do
         for k in `seq 1 10`;
         do
 #       ./acocpu file.tsp           alpha   beta    q   rho maxEpoch    mapThreads  farmThreads
-            if 
         ./acocpu $tspBase$problem   1       2       1   0.5 10          $i          $i
         done
     done

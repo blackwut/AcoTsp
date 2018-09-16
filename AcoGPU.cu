@@ -403,8 +403,8 @@ int main(int argc, char * argv[]) {
     float rho = 0.5f;
     uint32_t maxEpoch = 1;
     uint32_t threadsPerBlock = 128;
-    uint32_t nWarpsPerBlock = 8;
-    uint32_t nAntsPerWarp = 2;
+    uint32_t nWarpsPerBlock = 1;
+    uint32_t nMaxAntsPerWarp = 1;
 
     if ( argc < 7 ) {
         std::cout << "Usage:"
@@ -417,7 +417,7 @@ int main(int argc, char * argv[]) {
         << " maxEpoch"
         << " [threadsPerBlock = " << threadsPerBlock << "]"
         << " [nWarpsPerBlock = "  << nWarpsPerBlock  << "]"
-        << " [nAntsPerWarp = "    << nAntsPerWarp    << "]"
+        << " [nMaxAntsPerWarp = " << nMaxAntsPerWarp << "]"
         << std::endl;
         exit(-1);
     }
@@ -430,7 +430,7 @@ int main(int argc, char * argv[]) {
     maxEpoch        = parseArg<uint32_t>(argv[6]);
     if ( argc > 7 ) threadsPerBlock = parseArg<uint32_t>(argv[7]);
     if ( argc > 8 ) nWarpsPerBlock  = parseArg<uint32_t>(argv[8]);
-    if ( argc > 9 ) nAntsPerWarp    = parseArg<uint32_t>(argv[9]);
+    if ( argc > 9 ) nMaxAntsPerWarp = parseArg<uint32_t>(argv[9]);
 
     TSP<float> tsp(path);
 
@@ -558,28 +558,48 @@ int main(int argc, char * argv[]) {
     const dim3 fitBlock( threadsPerBlock );
     const dim3 fitGrid( numberOfBlocks(fitnessCols, fitBlock.x) );
     // Tour
-    const dim3 tourGrid( divUp(nAnts, nWarpsPerBlock * nAntsPerWarp) );
+    const dim3 tourGrid( divUp(nAnts, nWarpsPerBlock * nMaxAntsPerWarp) );
     const dim3 tourBlock(32 * nWarpsPerBlock);
     const uint32_t tourShared  = nWarpsPerBlock * (alignedCities  * sizeof(uint8_t) + alignedCities  * sizeof(float));
-    if ( tourShared > deviceProp.sharedMemPerBlock ) {
-        std::cout << "Shared memory is not enough. Please reduce nWarpsPerBlock." << std::endl;
-        exit(-1);
-    }
     // TourLength
-    const dim3 lenGrid( nAnts ); // must be nAnts
+    const dim3 lenGrid( nAnts );                // must be nAnts
     const dim3 lenBlock( threadsPerBlock );
     const uint32_t lenShared = lenBlock.x / 32 * sizeof(float);
     // Update best
-    const dim3 bestGrid(1); // must be 1
-    const dim3 bestBlock(32); // must be 32
+    const dim3 bestGrid(1);                     // must be 1
+    const dim3 bestBlock(32);                   // must be 32
      // Update Delta
-    const dim3 deltaGrid( nAnts ); //must be nAnts
+    const dim3 deltaGrid( nAnts );              // must be nAnts
     const dim3 deltaBlock( threadsPerBlock );
     const uint32_t deltaShared = alignedCities * sizeof(uint32_t);
      // Update Pheromone
     const dim3 pheroBlock( threadsPerBlock );
     const dim3 pheroGrid( numberOfBlocks(pheromoneCols, pheroBlock.x) );
 
+    //
+    uint32_t threadsActive = 0;
+    uint32_t realActiveBlocks = 0;
+    uint32_t maxActiveBlocks = 0;
+    cudaCheck( cudaOccupancyMaxActiveBlocksPerMultiprocessor((int *)&maxActiveBlocks, calcTour, tourBlock.x, tourShared) );
+
+    realActiveBlocks = (tourGrid.x < maxActiveBlocks * deviceProp.multiProcessorCount) ?
+                        tourGrid.x : maxActiveBlocks * deviceProp.multiProcessorCount;
+
+    threadsActive = realActiveBlocks * tourBlock.x;
+
+    if ( tourShared > deviceProp.sharedMemPerBlock ) {
+        std::cout << "Shared memory is not enough. Please reduce nWarpsPerBlock." << std::endl;
+        printResult(tsp.getName(),
+                    0,
+                    threadsActive,
+                    maxEpoch,
+                    0,
+                    0,
+                    nWarpsPerBlock,
+                    nMaxAntsPerWarp,
+                    false);
+        exit(-1);
+    }
 
     initCurand <<< initRandGrid, initRandBlock >>>(randState, seed, alignedAnts);
     cudaCheck( cudaGetLastError() );
@@ -620,19 +640,14 @@ int main(int argc, char * argv[]) {
     usec = msec * 1000;
     std::cout << "Compute time: " << msec << " ms " << usec << " usec " << std::endl;
     printMatrix("bestTour", bestTour, 1, nCities);
-
-    uint32_t maxActiveBlocks = 0;
-    cudaOccupancyMaxActiveBlocksPerMultiprocessor((int *)&maxActiveBlocks, calcTour, tourBlock.x, tourShared);
-    uint32_t threadsActive = maxActiveBlocks * tourBlock.x * deviceProp.multiProcessorCount;
-
     printResult(tsp.getName(),
-                maxActiveBlocks,
+                realActiveBlocks,
                 threadsActive,
                 maxEpoch,
                 msec,
                 usec,
-                *bestTourLength,
-                tsp.calcTourLength(bestTour),
+                nWarpsPerBlock,
+                nMaxAntsPerWarp,
                 tsp.checkTour(bestTour));
 
     cudaFree(randState);
