@@ -403,8 +403,8 @@ int main(int argc, char * argv[]) {
     float rho = 0.5f;
     uint32_t maxEpoch = 1;
     uint32_t threadsPerBlock = 128;
+    uint32_t nBlocks = 1;
     uint32_t nWarpsPerBlock = 1;
-    uint32_t nMaxAntsPerWarp = 1;
 
     if ( argc < 7 ) {
         std::cout << "Usage:"
@@ -416,8 +416,8 @@ int main(int argc, char * argv[]) {
         << " rho"
         << " maxEpoch"
         << " [threadsPerBlock = " << threadsPerBlock << "]"
+        << " [nBlocks = "         << nBlocks         << "]"
         << " [nWarpsPerBlock = "  << nWarpsPerBlock  << "]"
-        << " [nMaxAntsPerWarp = " << nMaxAntsPerWarp << "]"
         << std::endl;
         exit(-1);
     }
@@ -429,8 +429,8 @@ int main(int argc, char * argv[]) {
     rho             = parseArg<float>   (argv[5]);
     maxEpoch        = parseArg<uint32_t>(argv[6]);
     if ( argc > 7 ) threadsPerBlock = parseArg<uint32_t>(argv[7]);
-    if ( argc > 8 ) nWarpsPerBlock  = parseArg<uint32_t>(argv[8]);
-    if ( argc > 9 ) nMaxAntsPerWarp = parseArg<uint32_t>(argv[9]);
+    if ( argc > 8 ) nBlocks         = parseArg<uint32_t>(argv[8]);
+    if ( argc > 9 ) nWarpsPerBlock  = parseArg<uint32_t>(argv[9]);
 
     TSP<float> tsp(path);
 
@@ -558,7 +558,8 @@ int main(int argc, char * argv[]) {
     const dim3 fitBlock( threadsPerBlock );
     const dim3 fitGrid( numberOfBlocks(fitnessCols, fitBlock.x) );
     // Tour
-    const dim3 tourGrid( divUp(nAnts, nWarpsPerBlock * nMaxAntsPerWarp) );
+
+    const dim3 tourGrid( nBlocks );
     const dim3 tourBlock(32 * nWarpsPerBlock);
     const uint32_t tourShared  = nWarpsPerBlock * (alignedCities  * sizeof(uint8_t) + alignedCities  * sizeof(float));
     // TourLength
@@ -595,8 +596,22 @@ int main(int argc, char * argv[]) {
                     maxEpoch,
                     0,
                     0,
+                    nBlocks,
                     nWarpsPerBlock,
-                    nMaxAntsPerWarp,
+                    false);
+        exit(-1);
+    }
+
+    if ( nBlocks > divUp(nAnts, nWarpsPerBlock) + 1) {
+        std::cout << "Too many resources will be wasted. Please reduce nBlocks and/or nWarpsPerBlock parameters." << std::endl;
+        printResult(tsp.getName(),
+                    0,
+                    threadsActive,
+                    maxEpoch,
+                    0,
+                    0,
+                    nBlocks,
+                    nWarpsPerBlock,
                     false);
         exit(-1);
     }
@@ -646,8 +661,8 @@ int main(int argc, char * argv[]) {
                 maxEpoch,
                 msec,
                 usec,
+                nBlocks,
                 nWarpsPerBlock,
-                nMaxAntsPerWarp,
                 tsp.checkTour(bestTour));
 
     cudaFree(randState);
