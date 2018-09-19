@@ -13,6 +13,7 @@
 #define UNIT_MS 1000.0
 #define UNIT_US 1
 #define UNIT_OUTPUT UNIT_S
+#define UNIT_SYMBOL "s" 
 
 #define TIME(val) (val) / UNIT_OUTPUT
 
@@ -50,8 +51,8 @@ struct Row {
     float       bestTourLength;
     std::string checkTour;
     std::string checkTourLength;
-    uint32_t    nWarpsPerBlock;     // AcoGPU only
-    uint32_t    nMaxAntsPerWarp;    // AcoGPU only
+    uint32_t    nBlocks;           // AcoGPU only
+    uint32_t    nWarpsPerBlock;    // AcoGPU only
 };
 
 struct Stat
@@ -66,6 +67,8 @@ struct Stat
     double   speedup     = 0.0;
     double   scalability = 0.0;
     double   efficiency  = 0.0;
+    // uint32_t nBlocks        = 0;    // AcoGPU only
+    // uint32_t nWarpsPerBlock = 0;    // AcoGPU only
 };
 
 std::vector<uint32_t> getAllKeys(std::multimap<uint32_t, Row> & rows) {
@@ -221,8 +224,8 @@ void loadFile(const std::string & filename, std::multimap<uint32_t, Row> & rows)
         >> one
         >> two;
 
+        r.nBlocks = two;
         r.nWarpsPerBlock = one;
-        r.nMaxAntsPerWarp = two;
 
         if (r.timeUS == 0) {
             r.mapWorkers = r.farmWorkers = -1;
@@ -265,32 +268,30 @@ int main(int argc, char * argv[]) {
     updateScalability(stats);
     updateEfficiency(stats);
 
-    std::cout << std::setw(10)
-        << std::setw(14) << "name"           << "\t"
-        << std::setw(14) << "workers"        << "\t"
-        // << std::setw(14) << "samples"        << "\t"
-        // << std::setw(14) << "sum"            << "\t"
-        // << std::setw(14) << "min"            << "\t"
-        << std::setw(14) << "avg"            << "\t"
-        // << std::setw(14) << "max"            << "\t"
-        << std::setw(14) << "speedup"        << "\t"
-        << std::setw(14) << "scalability"    << "\t"
-        << std::setw(14) << "efficiency"     << "\t"
-        << std::endl;
+    std::cout
+    << std::setw(27) << "Problem"               << " & "
+    << std::setw( 7) << "\\#Thrs"               << " & "
+    << std::setw(11) << "Avg (" UNIT_SYMBOL ")" << " & "
+    << std::setw(11) << "SpeedUp"               << " & "
+    << std::setw(13) << "Scalability"           << " & "
+    << std::setw(12) << "Efficiency"            << " \\\\ \\hline" << std::endl;
 
     for (Stat s : stats) {
-        std::cout << std::setw(10) << std::setprecision(4) << std::fixed
-        << std::setw(14) << s.name           << "\t"
-        << std::setw(14) << s.workers        << "\t"
-        // << std::setw(14) << s.samples        << "\t"
-        // << std::setw(14) << s.sum            << "\t"
-        // << std::setw(14) << TIME(s.min)      << "\t"
-        << std::setw(14) << TIME(s.avg)      << "\t"
-        // << std::setw(14) << TIME(s.max)      << "\t"
-        << std::setw(14) << s.speedup        << "\t"
-        << std::setw(14) << s.scalability    << "\t"
-        << std::setw(14) << s.efficiency     << "\t"
-        << std::endl;
+
+        const std::string name   = (s.workers == 0) ? "\\multirow{"+std::to_string(threads.size())+"}{*}{"+s.name+"}" : "";
+        const double speedup     = (s.workers == 0) ? 0.0 : s.speedup;
+        const double scalability = (s.workers == 0) ? 0.0 : s.scalability;
+        const double efficiency  = (s.workers == 0) ? 0.0 : s.efficiency;
+
+        std::cout << std::setw(27) << std::setprecision(4) << std::fixed
+        << std::setw(27) << name             << " & "
+        << std::setw( 7) << s.workers        << " & "
+        << std::setw(11) << TIME(s.avg)      << " & "
+        << std::setw(11) << speedup          << " & "
+        << std::setw(13) << scalability      << " & "
+        << std::setw(12) << efficiency       << " \\\\";
+        if (s.workers == threads[threads.size() - 1]) std::cout << " \\hline";
+        std::cout << std::endl;
     }
 
     return 0;
