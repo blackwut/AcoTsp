@@ -483,16 +483,16 @@ int main(int argc, char * argv[]) {
     const uint32_t bestTourElems   = bestTourRows   * bestTourCols;
 
     const float gmemRequired = (randStateElems  * sizeof(float)    +
-                                   edgesElems      * sizeof(float)    +
-                                   etaElems        * sizeof(float)    +
-                                   pheromoneElems  * sizeof(float)    +
-                                   fitnessElems    * sizeof(float)    +
-                                   deltaElems      * sizeof(float)    +
-                                   tabuElems       * sizeof(uint32_t) +
-                                   tourLengthElems * sizeof(float)    +
-                                   bestTourElems   * sizeof(uint32_t) +
-                                   1               * sizeof(float)
-                                   ) / 1048576.0;
+                                edgesElems      * sizeof(float)    +
+                                etaElems        * sizeof(float)    +
+                                pheromoneElems  * sizeof(float)    +
+                                fitnessElems    * sizeof(float)    +
+                                deltaElems      * sizeof(float)    +
+                                tabuElems       * sizeof(uint32_t) +
+                                tourLengthElems * sizeof(float)    +
+                                bestTourElems   * sizeof(uint32_t) +
+                                1               * sizeof(float)
+                                ) / 1048576.0;
 
     const uint32_t smemRequired  = nWarpsPerBlock * alignedCities * 5;
 
