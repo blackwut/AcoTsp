@@ -207,6 +207,8 @@ public:
         farmTour.remove_collector();
         farmTour.wrap_around();
 
+        // farmTour.set_scheduling_ondemand();
+
         uint32_t epoch = 0;
         do {
             calcFitness    (env.fitness, env.pheromone, env.eta, env.nCities, params.alpha, params.beta);
