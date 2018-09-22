@@ -229,7 +229,7 @@ public:
     }
     
     void printEdges() const {
-        printMatrix("Edges", edges, nCities, nCities);
+        printMatrixV("Edges", edges, nCities, nCities, 2);
     }
     
 
