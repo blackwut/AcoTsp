@@ -1,272 +1,227 @@
 #include <random>
 #include <limits>
 #include <cstddef>
+#include <atomic>
+#include <thread>
 
 #include <ff/parallel_for.hpp>
 #include <ff/farm.hpp>
 
-#include "ACO.cpp"
-#include "TSP.cpp"
+#include "Parameters.cpp"
+#include "Environment.cpp"
+#include "Ant.cpp"
 
-using namespace std;
 using namespace ff;
 
-struct Emitter: ff_node_t<int> {
+template <typename T, typename D>
+struct Emitter: ff_node_t< Ant<T> > {
 
     ff_loadbalancer * const loadBalancer;
-    int nAnts;
+    const Parameters<T>     & params;
+    const Environment<T, D> & env;
+    std::vector< Ant<T> >   & ants;
 
-    Emitter(ff_loadbalancer * const loadBalancer, int nAnts) 
-    : loadBalancer(loadBalancer), nAnts(nAnts) {}
+    Emitter(ff_loadbalancer * const loadBalancer,
+            const Parameters<T>     & params,
+            const Environment<T, D> & env,
+            std::vector< Ant<T> >   & ants) :
+    loadBalancer(loadBalancer),
+    params(params),
+    env   (env),
+    ants  (ants)
+    {}
 
-    int * svc(int * s) {
+    Ant<T> * svc(Ant<T> * s) {
         if (s == nullptr) {
-            
-            for (int i = 0; i < nAnts; ++i) {
-				int * x = new int(i);
-                ff_send_out(x);
+            for (uint32_t i = 0; i < env.nAnts; ++i) {
+                Ant<T> * ant = &ants[i];
+                ff_node::ff_send_out(ant);
             }
         
             loadBalancer->broadcast_task(EOS);
-            return GO_ON;
         }
-
-        free(s);
-        return GO_ON;
+        return (Ant<T> *)GO_OUT;
     }
 };
 
-template <typename T>
-struct Worker: ff_node_t<int> {
+template <typename T, typename D>
+struct Worker: ff_node_t< Ant<T> > {
 
-    std::mt19937 * generator = NULL;
-    std::uniform_real_distribution<T> * distribution = NULL;
+    const Parameters<T> & params;
+    Environment<T, D>   & env;
 
-	ACO<T> * aco = NULL;
-	TSP<T> * tsp = NULL;
-	
-	Worker(ACO<T> * aco, TSP<T> * tsp)
-	: aco(aco), tsp(tsp)
-	{
-		generator = new std::mt19937((unsigned int)time(0));
-		distribution = new std::uniform_real_distribution<T>(0, 1);
-	}
-
-	T nextRandom() {
-		return distribution->operator()(*generator);
-	}
-	
-	T atomic_addf(atomic<T> * f, T d){
-		T old = f->load(std::memory_order_consume);
-		T desired = old + d;
-		while (!f->compare_exchange_weak(old, desired, std::memory_order_release, std::memory_order_consume))
-		{
-			desired = old + d;
-		}
-		return desired;
-	}
-	
-    int * svc(int * in) {
-
-        if (in == EOS) return EOS;
-
-        const int id = *in;
-
-        for (int i = 0; i < aco->nCities; ++i) {
-			visited(id, i) = 1;
+    Worker(const Parameters<T> & params, Environment<T, D> & env) :
+    params(params),
+    env   (env)
+    {}
+    
+    inline T atomic_addf(std::atomic<T> * f, T value) {
+        T old = f->load(std::memory_order_consume);
+        T desired = old + value;
+        while (!f->compare_exchange_weak(old, desired, 
+                                         std::memory_order_release,
+                                         std::memory_order_consume))
+        {
+            desired = old + value;
         }
-
-//		T length = 0;
-        const int k = nextRandom() * aco->nCities;
-		visited(id, k) = 0;
-		tabu(id, 0) = k;
-        
-        for (int s = 1; s < aco->nCities; ++s) {
-            T sum = 0;
-
-            const int i = k;
-            for (int j = 0; j < aco->nCities; ++j) {
-				sum += fitness(i, j) * visited(id, j);
-				p(id, j) = sum;
-            }
-
-            const T r = nextRandom() * sum;
-            int to = -1;
-            for (int j = 0; j < aco->nCities; ++j) {
-				if ( to == -1 && p(id, j) >= r) {
-                    to = j;
-                    break;
-                }
-            }
-
-			if (to == -1) {
-				cout << "Huston we have a problem! sum = " << sum << " random =" << r << endl;
-				to = aco->nCities - 1;
-			}
-			
-			visited(id, to) = 0;
-			tabu(id, s) = to;
-//Calculating length in this way decreese the performance about 40% in PHI server
-//			length += edges(i, k);
-        }
-		
-//		length += edges(k, 0);
-		
-        int from;
-        int to;
-		T length = 0;
-        for (int i = 0; i < aco->nCities - 1; ++i) {
-			from = tabu(id, i);
-			to = tabu(id, i + 1);
-			length += edges(from, to);
-        }
-		from = tabu(id, aco->nCities - 1);
-		to = tabu(id, 0);
-		length += edges(from, to);
-
-        aco->lengths[id] = length;
-
-        T d = aco->q / length;
-        for (int i = 0; i < aco->nCities - 1; ++i) {
-			from = tabu(id, i);
-			to = tabu(id, i + 1);
-            atomic_addf( (aco->adelta + (from * aco->nCities + to)), d );
-        }
-		from = tabu(id, aco->nCities - 1);
-		to = tabu(id, 0);
-        atomic_addf( (aco->adelta + (from * aco->nCities + to)), d );
-
-        return in;
+        return desired;
     }
-	
-	~Worker() {
-		delete generator;
-		delete distribution;
-	}
+    
+    Ant<T> * svc( Ant<T> * ant ) {
+
+        if ((void *)ant == EOS) {
+            return (Ant<T> * )EOS;
+        }
+
+        ant->constructTour(env.fitness, env.edges);
+        const T tau = params.q / ant->getTourLength();
+
+        auto bTabu = ant->getTabu().begin();
+        const auto constbTabu = bTabu;
+
+        while ( bTabu != ant->getTabu().end() - 1) {
+            const uint32_t from = *(bTabu++);
+            const uint32_t to   = *(bTabu);
+            atomic_addf( &env.delta[from * env.nCities + to], tau );
+            atomic_addf( &env.delta[to * env.nCities + from], tau );
+        }
+        const uint32_t from = *(bTabu);
+        const uint32_t to   = *(constbTabu);
+        atomic_addf( &env.delta[from * env.nCities + to], tau );
+        atomic_addf( &env.delta[to * env.nCities + from], tau );
+
+        return ant;
+    }
+    
+    ~Worker() {}
 };
 
-template <typename T>
+template <typename T, typename D>
 class AcoFF {
 
-    private:
-	
-	ACO<T> * aco = NULL;
-	TSP<T> * tsp = NULL;
+private:
+    const Parameters<T> & params;
+    Environment<T, D>   & env;
+    const uint32_t mapWorkers;
+    const uint32_t farmWorkers;
+    std::vector< Ant<T> > ants;
 
-    ff_Farm<> * farmTour = NULL;
-    Emitter * emitterTour = NULL;
-	ParallelForReduce<T> * pfr;
-	
-	int epoch;
+    ParallelForReduce<T> pfr;
+    ParallelForReduce< Ant<T> * > pfrAnts;
 
-    void initPheromone(T initialPheromone) {
-        pfr->parallel_for(0L, aco->elems, [&](const long i) {
-            aco->pheromone[i] = initialPheromone;
+    void initEta(std::vector<T> & eta, 
+                 const std::vector<T> & edges,
+                 const uint32_t nCities)
+    {
+        const uint32_t elems = nCities * nCities;
+        pfr.parallel_for(0L, elems, [&](const long i) {
+            const T edgeVal = edges[i];
+            eta[i] = (edgeVal == 0.0 ? 0.0 : 1.0 / edgeVal);
         });
+        pfr.threadPause();
     }
 
-    void initEta() {
-        pfr->parallel_for(0L, aco->elems, [&](const long i) {
-            aco->eta[i] = (tsp->edges[i] == 0 ? 0.0f : 1.0f / tsp->edges[i]);
+    void calcFitness(std::vector<T> & fitness,
+                     const std::vector<T> & pheromone,
+                     const std::vector<T> & eta,
+                     const uint32_t nCities,
+                     const T alpha,
+                     const T beta)
+    {
+        const uint32_t elems = nCities * nCities;
+        pfr.parallel_for(0L, elems, [&](const long i) {
+            fitness[i] = pow(pheromone[i], alpha) * pow(eta[i], beta);
         });
+        pfr.threadPause();
     }
 
-    void calcFitness() {
-        pfr->parallel_for(0L, aco->elems, [&](const long i) {
-            aco->fitness[i] = pow(aco->pheromone[i], aco->alpha) * pow(aco->eta[i], aco->beta);
+    void updateBestTour(std::vector<uint32_t> & bestTour,
+                        T & bestTourLength)
+    {
+        Ant<T> maxAnt(0);
+        Ant<T> * bestAnt = &ants[0];
+        pfrAnts.parallel_reduce(bestAnt,
+                                &maxAnt,
+                                0L, env.nAnts - 1,
+                                [&](const long i, Ant<T> * minAnt) {
+                                   if (ants[i + 1] < *minAnt) minAnt = &ants[i + 1];
+                                },
+                                [](Ant<T> * minAnt, Ant<T> * ant) { 
+                                   if (*ant < *minAnt) minAnt = ant;
+                                });
+        pfrAnts.threadPause();
+
+        std::copy ( bestAnt->getTabu().begin(), bestAnt->getTabu().end(), bestTour.begin() );
+        bestTourLength = bestAnt->getTourLength();
+    }
+
+    void resetDelta(std::vector<D> & delta,
+                    const uint32_t nCities)
+    {
+        const uint32_t elems = nCities * nCities;
+        pfr.parallel_for(0L, elems, [&](const long i) {
+            delta[i] = 0.0;
         });
+        pfr.threadPause();
     }
 
-    void calcTour() {
-        if (farmTour->run_then_freeze() < 0) {
-            error("Running farm\n");
-            exit(-1);
-        }
-
-		if (farmTour->wait_freezing() < 0) {
-			error("Wait freezing farm\n");
-			exit(-1);
-		}
-    }
-
-    void calcBestTour() {
-		T maxT = numeric_limits<T>::max();
-		
-		pfr->parallel_reduce(aco->bestTourLen, maxT,
-							0L, aco->nAnts,
-							[&](const long i, T &min) { min = (min > aco->lengths[i] ? aco->lengths[i] : min); },
-							[](T &v, const T &elem) { v = (v > elem ? elem : v); });
-
-        for (int i = 0; i < aco->nAnts; ++i) {
-            if (aco->lengths[i] == aco->bestTourLen) {
-                for (int j = 0; j < aco->nCities; ++j) {
-                    aco->bestTour[j] = aco->tabu[i * aco->nCities + j];
-                }
-                break;
-            }
-        }
-    }
-
-    void clearDelta() {
-        pfr->parallel_for(0L, aco->elems, [&](const long i) {
-			aco->adelta[i] = 0;
-		});
-    }
-
-    void updatePheromone() {
-        pfr->parallel_for(0L, aco->elems, [&](const long i) {
-            aco->pheromone[i] = aco->pheromone[i] * (1 - aco->rho) + aco->adelta[i];
+    void updatePheromone(std::vector<T> & pheromone,
+                         const std::vector<D> & delta,
+                         const uint32_t nCities,
+                         const T rho) {
+        const uint32_t elems = nCities * nCities;
+        pfr.parallel_for(0L, elems, [&](const long i) {
+            pheromone[i] = pheromone[i] * rho + delta[i];
         });
+        pfr.threadPause();
     }
 
-    public:
+public:
 
-    AcoFF(ACO<T> * aco, TSP<T> * tsp, int mapWorkers, int farmWorkers)
-    : aco(aco), tsp(tsp)
-	{
-		pfr = new ParallelForReduce<T>(mapWorkers);
-
-        farmTour = new ff_Farm<>( [&]() {
-            vector< unique_ptr<ff_node> > workers;
-            for(int i = 0; i < farmWorkers; ++i)
-                workers.push_back( make_unique< Worker<T> >(aco, tsp) );
-            return workers;
-        }());
-
-        emitterTour = new Emitter(farmTour->getlb(), aco->nAnts);
-        farmTour->add_emitter(*emitterTour);
-        farmTour->remove_collector();
-        farmTour->wrap_around();
-		
-		epoch = 0;
+    AcoFF(const Parameters<T> & params,
+          Environment<T, D> & env,
+          const uint32_t mapWorkers,
+          const uint32_t farmWorkers) :
+    params     (params),
+    env        (env),
+    mapWorkers (mapWorkers),
+    farmWorkers(farmWorkers),
+    ants       (env.nAnts, Ant<T>(env.nCities)),
+    pfr        (mapWorkers),
+    pfrAnts    (mapWorkers)
+    {
+        initEta(env.eta, env.edges, env.nCities);
     }
 
-	void nextIteration() {
-		epoch++;
-		calcFitness();
-		clearDelta();
-		calcTour();
-		calcBestTour();
-		updatePheromone();
-	}
-	
     void solve() {
-		
-		aco->bestTourLen = INT_MAX;
-		epoch = 0;
-		
-		T initialPheromone = 1.0f / tsp->dimension;
-		initPheromone(initialPheromone);
-		initEta();
-		
-		do {
-			nextIteration();
-		} while (epoch < aco->maxEpoch);
+
+        ff_Farm<> farmTour( [&]() {
+            std::vector< std::unique_ptr< ff_node > > workers;
+            for(uint32_t i = 0; i < farmWorkers; ++i)
+                workers.push_back( make_unique< Worker<T, D> >(params, env) );
+            return workers;
+        } ());
+
+        Emitter<T, D> E(farmTour.getlb(), params, env, ants);
+        farmTour.add_emitter(E);
+        farmTour.remove_collector();
+        farmTour.wrap_around();
+
+        // farmTour.set_scheduling_ondemand();
+
+        uint32_t epoch = 0;
+        do {
+            calcFitness    (env.fitness, env.pheromone, env.eta, env.nCities, params.alpha, params.beta);
+
+            // Calc Tour
+            if (farmTour.run_then_freeze() < 0) { error("Running farm\n"); exit(EXIT_RUN_FARM); }
+            if (farmTour.wait_freezing() < 0) { error("Wait freezing farm\n"); exit(EXIT_WAIT_FREEZING_FARM); }
+
+            updateBestTour (env.bestTour, env.bestTourLength);
+            resetDelta     (env.delta, env.nCities);
+            updatePheromone(env.pheromone, env.delta, env.nCities, params.rho);
+        } while ( ++epoch < params.maxEpoch );
     }
 
-	~AcoFF(){
-		delete pfr;
-        delete emitterTour;
-        delete farmTour;
-    }
+    ~AcoFF(){}
 };
